@@ -165,7 +165,7 @@ tests_pass() {
     (cd "$REPO" && timeout 600 $TEST_COMMAND >/dev/null 2>&1)
 }
 
-# Check if all tasks done (based on docs/tickets status lines, not task dirs)
+# Check if all tasks done (based on actual task dirs, not a hardcoded count)
 all_done() {
     local done total
     total=$(ls "$REPO/docs/tickets"/ticket-*.md 2>/dev/null | wc -l)

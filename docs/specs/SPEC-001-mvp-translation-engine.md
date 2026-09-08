@@ -59,6 +59,26 @@
 云路由接入(第三阶段)、反馈学习/自动微调、向量库、PostgreSQL、Kubernetes、
 OCR、其他游戏(RimWorld 等)适配、自动训练模型。
 
+## Reuse Decisions (ticket-002 复用审计结论)
+
+来源: docs/audits/REUSE_PLAN.md(ticket-002 产出)。审计了 DFI18n、dfi18n-data-zh-hans、
+wodzys/dwarf-fortress-chinese(dfzh)与 DFHack 53.16 官方能力后:
+
+1. **捕获/渲染层自研,全部走 DFHack 官方 API**。现有两个汉化方案的捕获/渲染
+   均依赖非官方挂钩(DFI18n = ELF 内存偏移挂钩 addst/addcoloredst;
+dfzh = Windows Detours 挂钩 SDL2 + 直接读内存),违反工程书「禁止内存偏移、
+   游戏侧只用 DFHack 官方 API(Lua/eventful/overlay)」,不采纳其代码。
+2. **seed 词典数据改造复用**:从 dfi18n-data `simple/zh-Hans.csv`(901 行)与
+   dfzh `dfzh_dict_exact.csv`(1884 行)导入静态高频词,转为本仓库 database/ 格式;
+   数据版权 CC BY-NC 4.0(矮人要塞中文维基翻译组),导入处必须记录来源与署名。
+3. **字体数据复用**:NotoSansMonoCJKsc-Bold.otf / MapleMonoNL-CN-*.ttf 均为
+   SIL OFL 1.1,可直接用于 ticket-008 的中文渲染;classic 53.16 位图字库(8x12、
+   CP437、无 TRUETYPE 配置项)无法直接铺 CJK 字形,渲染方案在 ticket-008 定稿。
+4. **规则引擎数据仅作格式参考**,不直接引入(格式需转换,且只覆盖静态/组合文本)。
+5. **DFHack 官方基础设施直接复用**:eventful(`onReport` 等)/ overlay /
+   Lua screen API(paintString/paintTile/Textures.loadTileset)/ dfhack-run。
+6. 第一版范围新增「复用数据导入 + 许可署名」动作,其余 Out of Scope 不变。
+
 ## Further Notes
 
 - ollama `gemma-4b-trans` 经 /api/generate 实测返回空响应 —— 需在工单 001 用

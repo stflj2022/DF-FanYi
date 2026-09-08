@@ -17,14 +17,17 @@ context:                 # 工程书 §36: 上下文不允许无限增长
   recent_events: 10
   recent_texts: 10
 
-queue:                   # 工程书 §25-30: 优先级队列(骨架期占位, ticket-007 实现)
-  workers_local: 1       # 本地 worker 数
+queue:                   # 工程书 §25-30: 优先级队列与调度(ticket-007 实现)
+  workers_local: 1       # 本地 worker 数(§26/§27: 不在 4800U 上大量并发 LLM)
   max_attempts: 3
   realtime_timeout_ms: 10000   # §29: >10s 的 realtime 任务降级
   priorities: [P0, P1, P2, P3, P4]
+  async_threshold: 0.25        # §34: 复杂度 ≤ 词典/规则档(≈0.25)走同步快路径
+  max_queue: 32                # §27 本地 LLM max_queue(满员拒绝新任务不阻塞)
 
 local_llm:               # 工程书 §27/§14: 本地 gemma E4B
   workers: 1             # 本地并发恒 1(CPU 单实例)
+  max_queue: 32          # §27: 等待队列上限(ticket-007 起生效)
   model: gemma-4b-trans
   base_url: http://127.0.0.1:11434
   timeout_s: 120

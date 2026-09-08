@@ -108,6 +108,104 @@ class Orchestrator:
         protected, restore_map = self._protector.protect(normalized)
         digest = source_hash(protected, context)  # §37: hash 含相关上下文
 
+        # 快路径(缓存/词典/规则, 不调 LLM): 命中即返回; 未命中 → LLM 阶段
+        fast = self._fast_result(normalized, protected, digest, start, context)
+        if fast is not None:
+            return fast
+
+        # 本地 LLM(§14/§15 E4B); 无 LLM 配置 → 离线回退
+        if self._llm is None:
+            logger.info("无 LLM 配置, 回退原文")
+            return TranslationResult(
+                normalized,
+                normalized,
+                model=self._model_name,
+                provider=self._provider,
+                latency_ms=_ms_since(start),
+                error="no LLM configured",
+            )
+        try:
+            translated = self._llm(protected)
+        except Exception as exc:  # noqa: BLE001 — 铁律: 任何 LLM 故障都回退原文
+            logger.warning("LLM 调用失败, 回退原文: %s", exc)
+            return TranslationResult(
+                normalized,
+                normalized,
+                model=self._model_name,
+                provider=self._provider,
+                latency_ms=_ms_since(start),
+                error=str(exc),
+            )
+        if not translated or not translated.strip():
+            logger.warning("LLM 返回空译文, 回退原文")
+            return TranslationResult(
+                normalized,
+                normalized,
+                model=self._model_name,
+                provider=self._provider,
+                latency_ms=_ms_since(start),
+                error="empty translation",
+            )
+
+        # 验证(§24): 占位符/数字/行数守恒不过 → 回退原文(原文自带完整标记/变量)
+        validation = self._validator.validate(protected, translated)
+        if not validation.valid:
+            logger.warning("验证不过, 回退原文: %s", validation.errors)
+            return TranslationResult(
+                normalized,
+                normalized,
+                model=self._model_name,
+                provider=self._provider,
+                latency_ms=_ms_since(start),
+                error=f"验证失败: {'; '.join(validation.errors)}",
+            )
+
+        # 还原占位符(§22/§23: 验证通过才还原, 还原永不丢信息)
+        restored = self._protector.restore(translated.strip(), restore_map)
+        return self._finalize(
+            TranslationResult(
+                restored,
+                normalized,
+                model=self._model_name,
+                provider=self._provider,
+                confidence=validation.score,
+                latency_ms=_ms_since(start),
+            ),
+            digest,
+            normalized,
+            context_hash=_context_hash(context),
+        )
+
+    def fast_translate(
+        self, text: str, *, context: dict[str, Any] | None = None
+    ) -> "TranslationResult | None":
+        """§34 快路径(缓存 L1+L2 → 词典 → 规则), 绝不调 LLM。
+
+        ticket-007 调度器路由用: 命中 → 同步返回可立即使用的结果;
+        未命中 → None(由调度器决定入队异步, 主线程不等待 LLM)。
+        与后台 worker 并发安全(共享组件: LRU/持久层均带锁, 词典/规则只读)。
+        """
+        start = time.perf_counter()
+        normalized = normalize_text(text)
+        if not normalized:
+            return None
+        protected, _restore = self._protector.protect(normalized)
+        digest = source_hash(protected, context)
+        return self._fast_result(normalized, protected, digest, start, context)
+
+    def _fast_result(
+        self,
+        normalized: str,
+        protected: str,
+        digest: str,
+        start: float,
+        context: dict[str, Any] | None,
+    ) -> "TranslationResult | None":
+        """快路径各阶段(L1→L2→词典→规则): 命中返回结果, 未命中 None。
+
+        translate() 与 fast_translate() 共用 —— 保证两条路径对缓存/词典/规则的
+        判定完全一致; translate() 在 None 时继续下探 LLM。
+        """
         # L1 缓存(§9) —— 命中: 写穿计数(高频提升依据 §38), 不调 LLM
         entry = self._cache.get(digest)
         if entry is not None:
@@ -200,68 +298,8 @@ class Orchestrator:
                 context_hash=_context_hash(context),
             )
 
-        # 本地 LLM(§14/§15 E4B); 无 LLM 配置 → 离线回退
-        if self._llm is None:
-            logger.info("无 LLM 配置, 回退原文")
-            return TranslationResult(
-                normalized,
-                normalized,
-                model=self._model_name,
-                provider=self._provider,
-                latency_ms=_ms_since(start),
-                error="no LLM configured",
-            )
-        try:
-            translated = self._llm(protected)
-        except Exception as exc:  # noqa: BLE001 — 铁律: 任何 LLM 故障都回退原文
-            logger.warning("LLM 调用失败, 回退原文: %s", exc)
-            return TranslationResult(
-                normalized,
-                normalized,
-                model=self._model_name,
-                provider=self._provider,
-                latency_ms=_ms_since(start),
-                error=str(exc),
-            )
-        if not translated or not translated.strip():
-            logger.warning("LLM 返回空译文, 回退原文")
-            return TranslationResult(
-                normalized,
-                normalized,
-                model=self._model_name,
-                provider=self._provider,
-                latency_ms=_ms_since(start),
-                error="empty translation",
-            )
-
-        # 验证(§24): 占位符/数字/行数守恒不过 → 回退原文(原文自带完整标记/变量)
-        validation = self._validator.validate(protected, translated)
-        if not validation.valid:
-            logger.warning("验证不过, 回退原文: %s", validation.errors)
-            return TranslationResult(
-                normalized,
-                normalized,
-                model=self._model_name,
-                provider=self._provider,
-                latency_ms=_ms_since(start),
-                error=f"验证失败: {'; '.join(validation.errors)}",
-            )
-
-        # 还原占位符(§22/§23: 验证通过才还原, 还原永不丢信息)
-        restored = self._protector.restore(translated.strip(), restore_map)
-        return self._finalize(
-            TranslationResult(
-                restored,
-                normalized,
-                model=self._model_name,
-                provider=self._provider,
-                confidence=validation.score,
-                latency_ms=_ms_since(start),
-            ),
-            digest,
-            normalized,
-            context_hash=_context_hash(context),
-        )
+        # 快路径未能解决 → None(translate() 下探 LLM, fast_translate() 由调度器决定入队)
+        return None
 
     def warm_l1(self, threshold: int = 10) -> int:
         """§38 高频提升: usage_count > threshold 的译文预热进 L1(常驻), 启动时调用。

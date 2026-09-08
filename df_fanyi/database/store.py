@@ -350,8 +350,10 @@ class SQLiteStore:
         context_json: str | None = None,
         selected_model: str | None = None,
         provider: str | None = None,
+        job_id: str | None = None,
     ) -> str:
-        jid = self._new_job_id()
+        """记录任务(§42 崩溃恢复依据)。job_id 由调用方指定时使用(内存队列同 id),\n        否则自动生成。"""
+        jid = job_id or self._new_job_id()
         with self._lock:
             self._conn.execute(
                 """INSERT INTO translation_jobs

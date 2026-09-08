@@ -11,7 +11,7 @@ import pytest
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from providers.ollama_client import (  # noqa: E402
+from df_fanyi.providers.ollama_client import (  # noqa: E402
     OllamaChatClient,
     OllamaEmptyResponse,
     OllamaUnavailable,

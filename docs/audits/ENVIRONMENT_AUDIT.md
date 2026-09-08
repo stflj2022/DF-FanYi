@@ -97,7 +97,7 @@ curl -s http://127.0.0.1:11434/api/chat -d '{
 }'
 ```
 
-- 代码固化: `providers/ollama_client.py` (`OllamaChatClient`, 系统提示常量
+- 代码固化: `df_fanyi/providers/ollama_client.py`(ticket-003 起入包; `OllamaChatClient`, 系统提示常量
   `TRANSLATION_SYSTEM_PROMPT`); 回放测试: `tests/test_ollama_client.py`
   (fixtures 为真实录制响应, 见 `tests/fixtures/ollama/`)。
 

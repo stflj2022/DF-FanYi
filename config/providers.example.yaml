@@ -1,0 +1,17 @@
+# 云端 provider 配置示例 —— 第三阶段接入(工程书 §17-18)。
+# 本文件仅作模板, 默认全部 disabled, 不含任何真实密钥。
+# 使用时把所需 provider 复制到用户配置 ~/.config/df-fanyi/config.yaml,
+# 并设置对应环境变量, 例如: export OPENROUTER_API_KEY=sk-...
+
+providers:
+  - name: openrouter
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    model: openai/gpt-4o-mini
+    enabled: false
+
+  - name: zhipu
+    base_url: https://open.bigmodel.cn/api/paas/v4
+    api_key_env: ZHIPU_API_KEY
+    model: glm-4-flash
+    enabled: false

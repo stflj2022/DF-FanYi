@@ -77,3 +77,35 @@ ticket-002 完成 ✅
 [2026-09-08 14:41:17] === ROUND 2 ===
 [2026-09-08 14:41:17] Provider: pi-primary
 [2026-09-08 14:41:17] Starting AI agent...
+## ticket-003 完成 ✅
+
+**执行**: 编号最小且 Blocked by 全 done 的 pending 工单 = **ticket-003（Python 翻译内核项目骨架）**。TDD 红→绿全程,严格遵守 docs/specs/SPEC-001 与工程书强制禁止事项（§2.4 无密钥入库、§56 不造 Router/不引 K8s/Postgres/向量库、零网络依赖）。
+
+### 交付内容
+
+**包结构**（`df_fanyi/`, pyproject 包名 df-fanyi v0.1.0）
+- `core/{orchestrator,queue,validator,context,capture,parser,segmenter}`、`local/gemma`、`database`、`router/pi_adapter`、`providers` 全部就位（占位模块注明对应工单）
+- `providers/ollama_client.py`（ticket-001 固化成果）迁入包内,测试导入同步
+
+**CLI**（`df-fanyi` + `python -m df_fanyi` 双入口,已 editable 安装验证）
+- `translate`: 读 stdin → 译文,`--json` 输出工程书 §10 契约字段;骨架期走**占位假 LLM**（零网络,无 ollama 也全绿）
+- `selftest`: 配置/日志/编排器自检 ✅
+
+**配置**（§47/§2.4）: `config/default.yaml`（cache/context 上限 §36/queue/local_llm.workers=1 §27/providers/logging/privacy）+ `providers.example.yaml`;分层 = 默认 → `~/.config/df-fanyi/config.yaml` 深合并 → **密钥只从环境变量读**（api_key_env 变量名,raw 永不回写密钥,`ProviderConfig.available` 判可用）
+
+**编排器骨架**: `Orchestrator(llm 可注入).translate()` → `TranslationResult`;LLM 异常/空输出 → 回退原文 confidence=0,**绝不抛异常**（§2.3/§30）
+
+**日志**（§45）: `logs/engine.log` INFO,幂等初始化,stderr 只出 WARNING
+
+### 验收
+
+| 验收标准 | 结果 |
+|---|---|
+| `python -m df_fanyi --help` + `df-fanyi translate` 可运行 | ✅ 实测 |
+| `pytest tests/ -q` 全绿 | ✅ **51 passed**（新增 30: 配置/CLI/orchestrator/无密钥扫描） |
+| config/default.yaml 结构齐全 + 用户覆盖 + 代码无密钥 | ✅（含 `test_no_secrets` 密钥形态扫描） |
+
+**流程**: 状态行→done ✅ → 复制 `.unattended/tasks/done/ticket-003-engine-skeleton.md` ✅ → commit `7869ae6`（36 文件,+975 行）✅
+
+**下一轮可做**: ticket-004（核心管线,Blocked by 001+003 现已全部 done）。
+[2026-09-08 14:56:06] ✅ Round completed successfully

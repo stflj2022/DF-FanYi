@@ -46,3 +46,29 @@
 [2026-09-08 14:23:55] === ROUND 1 ===
 [2026-09-08 14:23:55] Provider: pi-primary
 [2026-09-08 14:23:55] Starting AI agent...
+ticket-002 完成 ✅
+
+## 总结
+
+**执行了编号最小、Blocked by 全 done 的工单:ticket-002(现有方案复用审计)**
+
+### 审计结论(已写入 `docs/audits/REUSE_PLAN.md`)
+- **DFI18n**(github.com/DFI18n/dfi18n):Rust 翻译 mod,捕获 = ELF 内存偏移挂钩 `addst`/`addcoloredst`,渲染 = SDL2 钩子 + fontdue 光栅化 TTF;classic **不保证支持**(仅测 Steam 53.08),且「禁止内存偏移」约束下**不能照搬**
+- **dfzh**(wodzys/dwarf-fortress-chinese):DFHack 插件外壳 + **Windows Detours** 挂钩 SDL2 + SDL2_ttf;仅 Windows/Steam,最高支持 53.15-r2(无 53.16 版)
+- **classic 53.16 关键事实**:CP437 位图字库 8x12(240x90 网格),init 无 TRUETYPE 配置项 → CJK 渲染须走 TTF/纹理方案(ticket-008 核心)
+- **可复用资产**:词典数据(901+1884 行,CC BY-NC 署名)、OFL 字体 2 套、DFHack 官方 API(eventful `onReport`/overlay/screen `paintString`/Textures `loadTileset`/dfhack-run)
+
+### 交付
+| 项 | 状态 |
+|---|---|
+| `docs/audits/REUSE_PLAN.md`(4 问 + 结论表 + URL/源码证据) | ✅ |
+| SPEC-001 新增「Reuse Decisions」小节(范围回写) | ✅ |
+| `tests/test_reuse_plan.py`(TDD 红→绿,7 项验收断言) | ✅ |
+| ticket-002 状态行 → done + 复制到 `.unattended/tasks/done/` | ✅ |
+| `pytest tests/ -q` 全绿(21 passed) | ✅ |
+| commit `3c397c1`(含 driver 日志,`git add -A`) | ✅ |
+
+### 后续可做(等待主会话确认)
+- ticket-003(骨架)与 ticket-002 同属「无阻塞」,**下一个无人值守轮次会优先执行**
+- 从 dfi18n-data 导入 seed 词典的自动化脚本可并入 ticket-004(术语表 ≥50 条)
+[2026-09-08 14:40:37] ✅ Round completed successfully

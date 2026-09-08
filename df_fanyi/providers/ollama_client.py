@@ -119,10 +119,16 @@ class OllamaChatClient:
         *,
         system: str = TRANSLATION_SYSTEM_PROMPT,
         temperature: float = 0.3,
-        num_predict: int = 256,
+        num_predict: int = 1024,
         stream: bool = False,
     ) -> dict[str, Any]:
-        """构造 /api/chat 请求体(messages 格式)。"""
+        """构造 /api/chat 请求体(messages 格式)。
+
+        num_predict=1024(ticket-010 §54 实测修正): gemma-4b-trans 每次翻译前
+        有 thinking 阶段(ollama 归入 message.thinking, ~500+ token); 旧默认
+        256 被思考阶段耗尽 → 正文空 + done_reason=length → 白白超时回退。
+        预算必须覆盖 thinking + 译文(CPU ~9.5 tok/s, 上层超时见 local_llm.timeout_s)。
+        """
         return {
             "model": self.model,
             "messages": [

@@ -14,3 +14,4 @@
 [2026-09-08 17:33:10] 7/10 | driver=是 | dc71ce8 17:00 docs(decisions): ADR — 云端优先翻译(Cloud-First) — 用户决策: 云端默认主力, 本地 gemma 降为离线/降级兜底
 [2026-09-08 18:04:02] 7/10 | driver=是 | dc71ce8 17:00 docs(decisions): ADR — 云端优先翻译(Cloud-First) — 用户决策: 云端默认主力, 本地 gemma 降为离线/降级兜底
 [2026-09-08 18:34:02] 8/10 | driver=是 | 31f6d94 18:06 chore(driver) 2026-09-08 18:06:34: Auto checkpoint - Round 6
+[2026-09-08 19:04:53] 9/11 | driver=是 | 6e4ae6b 19:04 docs(tickets): ticket-011 云端批量预翻译 vanilla raws — 用户决策: 除运行时按需翻译外增加批量预翻模式, 离线翻译包装入 L2 词典层(blocked by 010, driver 完成验收后自动接续)

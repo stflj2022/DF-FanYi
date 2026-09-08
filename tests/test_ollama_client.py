@@ -52,7 +52,16 @@ class TestBuildPayload:
         assert roles == ["system", "user"]
         assert payload["messages"][0]["content"] == TRANSLATION_SYSTEM_PROMPT
         assert payload["messages"][1]["content"] == "Urist cancels Make Wooden Barrel."
-        assert payload["options"] == {"temperature": 0.3, "num_predict": 256}
+        # ticket-010 实测: gemma-4b-trans 每次翻译前有 ~500+ token 的 thinking 阶段
+        # (ollama 归入 message.thinking), num_predict=256 会被思考阶段耗尽 →
+        # 正文为空 + done_reason=length。预算必须覆盖 thinking + 译文。
+        assert payload["options"] == {"temperature": 0.3, "num_predict": 1024}
+
+    def test_num_predict_covers_thinking_phase(self) -> None:
+        """§54 验收实测(ticket-010): 预算不足时 thinking 吞掉全部 token, 正文为空。"""
+        client = OllamaChatClient()
+        payload = client.build_payload("Strike the earth!")
+        assert payload["options"]["num_predict"] >= 1024
 
     def test_system_prompt_forbids_extra_commentary(self) -> None:
         """实测 /api/generate 无系统提示会附带英文注释, 系统提示必须禁止。"""
@@ -96,6 +105,40 @@ class TestChatReplay:
         )
         with pytest.raises(OllamaEmptyResponse):
             client.chat("anything")
+
+    def test_thinking_with_empty_content_raises(self) -> None:
+        """ticket-010 §54 实测回归: thinking 阶段耗尽预算(done_reason=length,
+        content 空)必须显式报错回退, 绝不能把 thinking 当译文。"""
+        client = OllamaChatClient(
+            transport=_recording_transport(
+                {
+                    "model": "gemma-4b-trans",
+                    "message": {"role": "assistant", "content": "",
+                                 "thinking": "Here's a thinking process..."},
+                    "done_reason": "length",
+                },
+                [],
+            )
+        )
+        with pytest.raises(OllamaEmptyResponse):
+            client.chat("anything")
+
+    def test_content_preferred_over_thinking(self) -> None:
+        """thinking 与正文并存时(预算充足, done_reason=stop), 只取正文。"""
+        client = OllamaChatClient(
+            transport=_recording_transport(
+                {
+                    "model": "gemma-4b-trans",
+                    "message": {"role": "assistant", "content": "矮人",
+                                 "thinking": "Let me translate..."},
+                    "eval_count": 613, "eval_duration": 65_000_000_000,
+                },
+                [],
+            )
+        )
+        result = client.chat("Dwarf")
+        assert result.content == "矮人"
+        assert "thinking" not in result.content
 
     def test_transport_failure_raises_unavailable(self) -> None:
         def _boom(endpoint: str, payload: dict) -> dict:

@@ -269,3 +269,8 @@ ticket-007 完成 ✅
 
 下一轮 driver 将接手 **ticket-010（MVP 验收 Test 1-8 + 阈值初调）**，其依赖 009 已满足。
 [2026-09-08 18:40:05] ✅ Round completed successfully
+[2026-09-08 18:40:16] ✅ Pushed to GitHub
+[2026-09-08 18:40:16] Round complete, waiting 30s...
+[2026-09-08 18:40:46] === ROUND 8 ===
+[2026-09-08 18:40:46] Provider: pi-primary
+[2026-09-08 18:40:46] Starting AI agent...

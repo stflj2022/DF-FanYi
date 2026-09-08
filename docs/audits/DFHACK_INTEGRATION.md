@@ -121,3 +121,54 @@ loopback TCP 127.0.0.1:17486**(与配置 `bridge.port` 对齐):
 | `tests/test_bridge_lua.py` | pytest 驱动 + 禁项静态检查(无 memory 钩子/无阻塞读) |
 | `scripts/install-dfhack.sh` | 安装 fanyi.lua → hack/scripts/(幂等, luac 语法关) |
 | `scripts/dfhack-load-report.sh` | 真机负载探针(引擎起停/dfhack-run/手工步骤) |
+
+## 9. CJK 贴图落地定论 (ticket-009)
+
+§3 的路线已实现, 全部走官方 API, 零 memory 偏移、零字库修改:
+
+### 9.1 字形图集(生成产物, 已入库)
+- `scripts/generate_font_atlas.py`: Noto Sans CJK SC(--face SC)渲染
+  ASCII(0x20-0x7E)+ CJK 标点 + **GB2312 一级汉字(3755)** = 3877 字形,
+  8x12/格(与 DF classic 文字格同尺寸), 白字+黑影(黑底游戏下可读),
+  64x64 格/页 → 当前单页 `dfhack/data/fanyi-font/page-000.png`(512x768)。
+- `index.json`: {tile_w, tile_h, pages:[{png, cols, rows, cps:[...]}]} —— cps
+  顺序即 loadTileset 句柄顺序, 即 texpos 下标。
+- 生成器对缩放抗锯齿做对比度增强(核心笔画 α→255), 否则游戏黑底下呈灰字。
+- 字体许可: SIL OFL 1.1(随附 LICENSE-OFL.txt), 位图集再分发合规
+  (FONT-SOURCE.md 记录来源与生成命令)。
+- 依赖注意: 系统 python3 无 PIL —— 生成用 venv(如 /tmp/fanyi-atlas-venv +
+  `uv pip install pillow`); 图集已提交仓库, 玩家无需重生成。
+
+### 9.2 游戏侧加载与绘制(fanyi.lua)
+- 装载: 读 `hack/data/fanyi-font/index.json` → `dfhack.textures.loadTileset(
+  png, 8, 12, true)`(is_map=true 32px 贴图集注册) → `getTexposByHandle`
+  逐字形取 texpos → `S.font.by_cp[codepoint]=texpos`; 任何失败 → installed=false。
+- UTF-8: 自实现 `fanyi_utf8_codepoints`(非法序列→U+FFFD), 不依赖 DFHack 的
+  utf8 库编译选项。
+- 渲染: overlay 小部件 `fanyi.subtitle`(继承 `plugins.overlay` 的
+  OverlayWidget, `OVERLAY_WIDGETS` 全局注册; 脚本重执行幂等)。`onRenderBody`
+  内调纯函数 `fanyi_paint_subtitle(dc,w,h)`: 底部对齐逐字
+  `dc:seek(x,y):tile(' ',texpos)`; 缺字形跳格(与源文同宽对齐), 超宽截断。
+- **贴图时间窗铁律**: 只在 overlay 框架渲染回调内绘制(官方 paintTile 约束),
+  桥的数据面(fanyi_render_payload/render_lines)与绘制面完全解耦 → 无头可测。
+- 启用链: `fanyi overlays on cjk` → 图集缺失则拒绝并提示(门控静默原文);
+  就绪则装载 + `overlay.rescan()` + `dfhack.run_command('overlay','enable',
+  'fanyi.subtitle')`(官方持久化路径, 写 dfhack-config/overlay.json)。
+- 哈希表计数用 `fanyi_count_map`(`#` 对非数组未定义 —— ticket-008 坑位不回归)。
+
+### 9.3 无头验证
+- harness 新增: defclass 最小实现(ATTRS 合成/父链方法解析)、
+  `plugins.overlay` mock(rescan 计数)、`dfhack.textures` mock(确定性句柄→
+  texpos 映射, 测试可反推每个 cp 的 texpos)、`M.install_font`(写假图集)、
+  `M.make_dc`(记录 tile 调用)。
+- 场景: `overlays_cmd`(缺图集拒绝→装后放行→overlay enable 下发)、
+  `cjk_render_tiles`(事件→引擎→译文→widget 逐字贴 5 格, x/y/texpos 全断言,
+  off 后零绘制)、`cjk_missing_glyph`(缺字形跳格+UTF-8 非法序列)。
+- 真机负载: `install-dfhack.sh` 已同步拷贝图集到 `hack/data/fanyi-font/`
+  (幂等; --check 不写入); 游戏内人工轮次见 docs/audits/E2E_CHECKLIST.md。
+
+### 9.4 已知限制
+- 仅 classic ASCII 字体包(8x12); vector 字体包(其格非 8x12)未适配, overlay
+  位置与格宽可能出现错位 —— 后续按需支持。
+- 玩家仍需在游戏设置里保证 DF 使用默认 ASCII 字形集(经验: texture pack 与
+  DF 字形叠加渲染, 本方案不替换游戏字库, 无需额外设置)。

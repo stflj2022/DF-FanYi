@@ -14,6 +14,8 @@ if [[ "$MODE" == "-d" || "$MODE" == "--df-root" ]]; then MODE="install"; fi
 
 SRC="$ROOT/dfhack/scripts/fanyi.lua"
 DEST="$DF_ROOT/hack/scripts/fanyi.lua"
+FONT_SRC="$ROOT/dfhack/data/fanyi-font"
+FONT_DEST="$DF_ROOT/hack/data/fanyi-font"
 
 if [[ ! -f "$SRC" ]]; then
     echo "✗ 仓库脚本缺失: $SRC" >&2
@@ -28,7 +30,8 @@ if [[ ! -d "$DF_ROOT/hack/scripts" ]]; then
     exit 2
 fi
 
-if [[ -f "$DEST" ]] && diff -q "$SRC" "$DEST" >/dev/null 2>&1; then
+if [[ -f "$DEST" ]] && diff -q "$SRC" "$DEST" >/dev/null 2>&1 \
+   && [[ -f "$FONT_DEST/index.json" ]] && diff -q "$FONT_SRC/index.json" "$FONT_DEST/index.json" >/dev/null 2>&1; then
     echo "  已安装且与仓库一致 (skip)"
     exit 0
 fi
@@ -40,6 +43,12 @@ fi
 
 cp "$SRC" "$DEST"
 echo "  ✓ fanyi.lua → $DEST"
+
+# CJK 字形图集(ticket-009): fanyi overlays on cjk 需要它; 未安装则静默原文降级
+mkdir -p "$FONT_DEST"
+cp "$FONT_SRC"/index.json "$FONT_SRC"/page-*.png "$FONT_DEST"/
+cp "$FONT_SRC"/LICENSE-OFL.txt "$FONT_SRC"/FONT-SOURCE.md "$FONT_DEST"/ 2>/dev/null || true
+echo "  ✓ 字形图集 → $FONT_DEST ($(ls "$FONT_DEST"/page-*.png | wc -l) 页)"
 
 # 验证: game 进程是否存在(DFHack 内置 Lua 语法检查只能在游戏内做, 这里做外部近似)
 if command -v luac5.4 >/dev/null 2>&1; then

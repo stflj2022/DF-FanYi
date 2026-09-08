@@ -24,6 +24,8 @@ SCENARIOS = [
     "reconnect",
     "gamelog_history",
     "overlays_cmd",
+    "cjk_render_tiles",
+    "cjk_missing_glyph",
 ]
 
 

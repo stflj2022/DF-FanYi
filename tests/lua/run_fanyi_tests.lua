@@ -143,27 +143,37 @@ elseif scenario == 'gamelog_history' then
     assert_eq(st.stats.captured >= before + 1, true, 'appended line captured')
     assert_eq(st.stats.captured > before + 5, false, 'no full re-harvest')
 
--- ============ 场景 7: overlays 命令与 CJK 门控 ============
+-- ============ 场景 7: overlays 命令与 CJK 门控(ticket-009: 图集就绪才放行) ============
 elseif scenario == 'overlays_cmd' then
     M.engine_up = true
     M.load({}, {enable = true})
     M.load({'overlays', 'on'}, {})
     assert_match(M.output_joined(), '已开启', 'overlays on')
-    -- 无字体 → 渲染载荷为空(静默原文)
-    local st = M.state()
-    M.reports[1] = {text='x'}
-    -- 渲染门控: render_cjk=false 时即使有译文也不输出
-    M.add_report(1, 'Do you know where we are?')
-    M.emit_report(1)
-    M.step(60)
-    M.engine_auto_respond('你知道我们在哪儿吗？', 0.95)
-    M.step(60)
-    st = M.state()
-    assert_eq(st.render_cjk, false, 'cjk off by default')
-    -- 开启 cjk 后渲染载荷含译文
+    -- 未装图集时 overlays on cjk 必须被拒(静默原文门控)
+    M.output = {}
     M.load({'overlays', 'on', 'cjk'}, {})
-    assert_eq(M.state().render_cjk, true, 'cjk enabled')
-    -- overlap: 已有译文应能渲染
+    assert_match(M.output_joined(), '不可用', 'cjk refused without atlas')
+    assert_eq(M.state().render_cjk, false, 'cjk off without atlas')
+    -- 装图集后放行: 注册纹理页 + 持久启用 overlay 小部件
+    M.install_font({['page-000.png'] = {39118, 22768}})  -- 风, 声
+    M.output = {}
+    M.load({'overlays', 'on', 'cjk'}, {})
+    assert_match(M.output_joined(), '贴图就绪', 'cjk enabled with atlas')
+    local st = M.state()
+    assert_eq(st.render_cjk, true, 'cjk enabled')
+    assert_eq(st.font.installed, true, 'font installed')
+    assert_eq(#M.texture_loads, 1, 'loadTileset called once')
+    assert_eq(M.texture_loads[1].tile_w, 8, 'atlas tile_w')
+    assert_eq(M.texture_loads[1].tile_h, 12, 'atlas tile_h')
+    assert_eq(M.rescan_calls >= 1, true, 'overlay.rescan called')
+    local found_enable = false
+    for _, argv in ipairs(M.run_commands) do
+        if argv[1] == 'overlay' and argv[2] == 'enable' and argv[3] == 'fanyi.subtitle' then
+            found_enable = true
+        end
+    end
+    assert_eq(found_enable, true, 'overlay enable fanyi.subtitle issued')
+    -- 端到端: 已有译文应能渲染
     M.load({'clear'}, {})
     M.add_report(2, 'The wind howls.')
     M.emit_report(2)
@@ -172,6 +182,69 @@ elseif scenario == 'overlays_cmd' then
     M.step(60)
     local last = M.state().render_lines[#M.state().render_lines]
     assert_eq(last.text, '风声呼啸。', 'rendered after cjk')
+
+-- ============ 场景 8: overlay 字幕条贴图(载荷 → texpos 逐字绘制) ============
+elseif scenario == 'cjk_render_tiles' then
+    -- "风声呼啸。" → cp 表(页内顺序即 texpos 顺序)
+    M.install_font({['page-000.png'] = {39118, 22768, 21628, 21880, 12290}})
+    M.engine_up = true
+    M.load({}, {enable = true})
+    local st = M.state()
+    assert_eq(M.env.OVERLAY_WIDGETS ~= nil and M.env.OVERLAY_WIDGETS.subtitle ~= nil,
+              true, 'OVERLAY_WIDGETS.subtitle registered')
+    M.load({'overlays', 'on', 'cjk'}, {})
+    M.add_report(5, 'The wind howls.')
+    M.emit_report(5)
+    M.step(60)
+    M.engine_auto_respond('风声呼啸。', 0.9)
+    M.step(60)
+    st = M.state()
+    assert_eq(#st.render_lines, 1, 'one render line')
+    -- 实例化 widget(overlay 框架路径)并直接驱动 onRenderBody(渲染回调内才会画)
+    local widget = M.env.OVERLAY_WIDGETS.subtitle{name = 'fanyi.subtitle'}
+    assert_eq(widget.frame.w, 60, 'frame.w default')
+    assert_eq(widget.frame.h, 8, 'frame.h default')
+    local dc = M.make_dc()
+    widget:onRenderBody(dc)
+    assert_eq(#dc.tiles, 5, 'painted one tile per codepoint')
+    -- 底部对齐: 单行 → y = frame.h-1 = 7; x 逐格递增
+    for i, t in ipairs(dc.tiles) do
+        assert_eq(t.x, i - 1, 'tile x order')
+        assert_eq(t.y, 7, 'tile bottom row')
+    end
+    -- texpos 确定性: 第一页 base=100, cp 在页内下标 i(1 基) → texpos = 500000+100+i
+    local want = {500101, 500102, 500103, 500104, 500105}
+    for i, t in ipairs(dc.tiles) do
+        assert_eq(t.texpos, want[i], 'texpos for glyph ' .. i)
+    end
+    -- 门控: 关闭后不画任何像素(§2.3 静默原文)
+    M.load({'overlays', 'off'}, {})
+    dc = M.make_dc()
+    widget:onRenderBody(dc)
+    assert_eq(#dc.tiles, 0, 'no paint when overlays off')
+
+-- ============ 场景 9: 字形缺失 → 跳格不崩(未知 cp / 拒绝门控) ============
+elseif scenario == 'cjk_missing_glyph' then
+    M.install_font({['page-000.png'] = {39118}})  -- 只装"风"
+    M.engine_up = true
+    M.load({}, {enable = true})
+    M.load({'overlays', 'on', 'cjk'}, {})
+    M.add_report(6, 'The wind howls.')
+    M.emit_report(6)
+    M.step(60)
+    -- 译文含未装字形(声/呼/啨/。): 贴图只画"风", 其余跳格
+    M.engine_auto_respond('风起。', 0.9)
+    M.step(60)
+    local widget = M.env.OVERLAY_WIDGETS.subtitle{name = 'fanyi.subtitle'}
+    local dc = M.make_dc()
+    widget:onRenderBody(dc)
+    assert_eq(#dc.tiles, 1, 'only installed glyph painted')
+    assert_eq(dc.tiles[1].x, 0, 'wind at cell 0')
+    -- UTF-8 解码器: 合法/非法序列
+    local cps = M.env.fanyi_utf8_codepoints('风A\xffz')
+    assert_eq(cps[1], 39118, 'utf8 3-byte')
+    assert_eq(cps[2], 65, 'utf8 ascii')
+    assert_eq(cps[3], 0xFFFD, 'utf8 invalid → U+FFFD')
 
 else
     error('unknown scenario: ' .. scenario)

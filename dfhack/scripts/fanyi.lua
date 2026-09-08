@@ -5,8 +5,10 @@
 --   1. 捕获: 公告(report, eventful.onReport)+ 游戏日志回溯(History, 新行去重);
 --   2. 传输: JSON-RPC 2.0 over JSON Lines, loopback TCP
 --      (DFHack 自捆绑 luasocket 官方仅 TCP, 见 docs/audits/DFHACK_INTEGRATION.md §5);
---   3. 渲染: overlay 小部件(OverlayWidget + widgets.Label); CJK 字形需字体贴图
---      (ticket-009), 未就绪前 overlay 不绘制 → 游戏显示原文(§2.3 静默降级);
+--   3. 渲染: overlay 小部件(底部字幕条); 中文经字形图集(hack/data/fanyi-font/)
+--      + dfhack.textures 官方 API 逐字贴图(ticket-009, 定论见
+--      docs/audits/DFHACK_INTEGRATION.md §9); 图集未安装/门控关闭时不绘制
+--      → 游戏显示原文(§2.3 静默降级);
 --   4. 版本守卫: DF/DFHack 版本不匹配 → Safe Mode(不捕获/不渲染, 仅诊断 §43-44);
 --   5. 断线自愈: 引擎未启动/宕机 → 指数退避重连, 任何时刻不阻塞游戏主循环
 --      (所有套接字操作非阻塞 + pcall, §29/§30)。
@@ -32,6 +34,8 @@ fanyi (DF-FanYi bridge)
 ]====]
 
 local JSON = (pcall(require, 'json')) and require('json') or _G.json
+local overlay = require('plugins.overlay')
+local defclass = defclass  -- DFHack 脚本环境全局(gui.class); 无头 harness 自带同义实现
 
 -- 全局持久状态(脚本命令每次执行都会重跑本文件, 状态必须挂在全局)
 fanyi_state = fanyi_state or {}
@@ -68,6 +72,7 @@ S.readbuf = S.readbuf or ''       -- 行拆解缓冲(响应聚合)
 S.render_lines = S.render_lines or {}   -- 准备绘制的 {text, confidence}
 S.overlays_on = S.overlays_on or false
 S.render_cjk = S.render_cjk or false
+S.font = S.font or {installed = false, tile_w = 8, tile_h = 12, by_cp = {}}
 S.last_error = S.last_error or ''
 S.gamelog = S.gamelog or {enabled=true, path=nil}
 
@@ -321,15 +326,145 @@ end
 -- 渲染载荷(纯函数, 与 overlay 解耦; CJK 字形未就绪时输出空 → 不绘制) -----------
 
 function fanyi_render_lines()
-    if not S.overlays_on then return '' end
-    if not S.render_cjk then return '' end  -- 字体贴图未安装 → 静默原文(§2.3/§43-44)
-    if #S.render_lines == 0 then return '' end
+    if not S.render_cjk then return '' end  -- CJK 门控关闭 → 空载荷(§2.3 静默原文)
+    local payload = fanyi_render_payload(8)
+    if #payload == 0 then return '' end
     local parts = {}
-    for i = #S.render_lines - math.min(7, #S.render_lines) + 1, #S.render_lines do
-        parts[#parts + 1] = S.render_lines[i].text
-    end
+    for _, row in ipairs(payload) do parts[#parts + 1] = row.text end
     return table.concat(parts, '\n')
 end
+
+-- 渲染载荷(行列表, 底部字幕条数据源; 与贴图/overlay 完全解耦, 可无头断言)
+function fanyi_render_payload(max_rows)
+    if not S.overlays_on then return {} end
+    if #S.render_lines == 0 then return {} end
+    max_rows = max_rows or 8
+    local out = {}
+    for i = math.max(1, #S.render_lines - max_rows + 1), #S.render_lines do
+        out[#out + 1] = S.render_lines[i]
+    end
+    return out
+end
+
+-- CJK 字形贴图(ticket-009): UTF-8 解码 + 图集装载 + 贴图坐标 ------------------
+
+-- UTF-8 → codepoint 表(自实现, 不依赖 DFHack Lua 编译选项; 非法序列→U+FFFD)
+function fanyi_utf8_codepoints(s)
+    local out = {}
+    local i, n = 1, #s
+    while i <= n do
+        local b1 = s:byte(i)
+        local cp, extra
+        if b1 < 0x80 then cp, extra = b1, 0
+        elseif b1 >= 0xC2 and b1 < 0xE0 then cp, extra = b1 - 0xC0, 1
+        elseif b1 >= 0xE0 and b1 < 0xF0 then cp, extra = b1 - 0xE0, 2
+        elseif b1 >= 0xF0 and b1 < 0xF5 then cp, extra = b1 - 0xF0, 3
+        else cp, extra = 0xFFFD, 0 end
+        local ok = true
+        for k = 1, extra do
+            local b = s:byte(i + k)
+            if b and b >= 0x80 and b < 0xC0 then
+                cp = cp * 0x40 + (b - 0x80)
+            else
+                ok = false
+                break
+            end
+        end
+        if not ok then cp = 0xFFFD end
+        out[#out + 1] = cp
+        i = i + (ok and (extra + 1) or 1)
+    end
+    return out
+end
+
+-- 装载字形图集(hack/data/fanyi-font/): index.json + loadTileset 注册纹理页。
+-- 成功后 S.font.by_cp[codepoint]=texpos; 任何失败 → installed=false(门控静默原文)。
+function fanyi_font_load()
+    local tex = dfhack.textures
+    if not (tex and tex.loadTileset and tex.getTexposByHandle) then
+        S.font.installed = false
+        return false, 'dfhack.textures API 不可用'
+    end
+    local dir = (dfhack.getDFPath and dfhack.getDFPath() or '.') .. '/hack/data/fanyi-font/'
+    local fh = io.open(dir .. 'index.json', 'r')
+    if not fh then
+        S.font.installed = false
+        return false, '未安装字形图集(' .. dir .. '; scripts/generate_font_atlas.py 产出)'
+    end
+    local data = fh:read('*a')
+    fh:close()
+    local ok, index = pcall(JSON.decode, data)
+    if not ok or type(index) ~= 'table' or type(index.pages) ~= 'table' then
+        S.font.installed = false
+        return false, 'index.json 解析失败'
+    end
+    local by_cp = {}
+    for _, page in ipairs(index.pages) do
+        local handles = tex.loadTileset(
+            dir .. page.png, index.tile_w or 8, index.tile_h or 12, true)
+        if type(handles) ~= 'table' then
+            S.font.installed = false
+            return false, 'loadTileset 失败: ' .. tostring(page.png)
+        end
+        for i, cp in ipairs(page.cps) do
+            by_cp[cp] = tex.getTexposByHandle(handles[i]) or 0
+        end
+    end
+    S.font.by_cp = by_cp
+    S.font.tile_w = index.tile_w or 8
+    S.font.tile_h = index.tile_h or 12
+    S.font.installed = true
+    return true
+end
+
+-- 哈希表显式计数(`#` 对非数组未定义 —— ticket-008 已踩坑, 严禁回归)
+function fanyi_count_map(t)
+    local n = 0
+    for _ in pairs(t) do n = n + 1 end
+    return n
+end
+
+-- 贴图绘制(纯逻辑, dc 由调用方注入; 返回绘制格数): 底部对齐逐字贴 texpos,
+-- 缺字形跳格(保持与源文同宽对齐); 只在渲染回调内被 overlay 框架调用。
+function fanyi_paint_subtitle(dc, max_cols, max_rows)
+    if not (S.overlays_on and S.render_cjk and S.font.installed) then return 0 end
+    local payload = fanyi_render_payload(max_rows)
+    if #payload == 0 then return 0 end
+    max_cols = max_cols or 60
+    max_rows = max_rows or 8
+    local base_row = max_rows - #payload  -- 底部对齐
+    local painted = 0
+    for ri, line in ipairs(payload) do
+        local x = 0
+        for _, cp in ipairs(fanyi_utf8_codepoints(line.text)) do
+            if x >= max_cols then break end
+            local tp = S.font.by_cp[cp]
+            if tp and tp > 0 then
+                dc:seek(x, base_row + ri - 1):tile(' ', tp)
+                painted = painted + 1
+            end
+            x = x + 1
+        end
+    end
+    return painted
+end
+
+-- overlay 字幕条小部件(官方 overlay 插件): 底部右侧, 8 行×60 列。
+-- 渲染只在 onRenderBody 回调内发生(§29: 不占主循环); 门控关闭时不画任何像素。
+FanyiSubtitle = defclass(FanyiSubtitle, overlay.OverlayWidget)
+FanyiSubtitle.ATTRS = FanyiSubtitle.ATTRS or {}
+FanyiSubtitle.ATTRS.desc = 'DF-FanYi 中文译文悬浮(底部字幕条, fanyi overlays on cjk)'
+FanyiSubtitle.ATTRS.default_pos = {x = -2, y = -2}
+FanyiSubtitle.ATTRS.default_enabled = false
+FanyiSubtitle.ATTRS.viewscreens = 'all'
+FanyiSubtitle.ATTRS.frame = {w = 60, h = 8}
+
+function FanyiSubtitle:onRenderBody(dc)
+    fanyi_paint_subtitle(dc, self.frame.w, self.frame.h)
+end
+
+-- overlay 插件扫描脚本全局 OVERLAY_WIDGETS 注册小部件(名字: fanyi.subtitle)
+OVERLAY_WIDGETS = {subtitle = FanyiSubtitle}
 
 -- 主轮询节拍 ----------------------------------------------------------------
 
@@ -423,7 +558,11 @@ function fanyi_status_lines()
             S.stats.captured, S.stats.sent, S.stats.recv,
             S.stats.done, S.stats.failed, S.stats.reconnect),
         ('  字幕: %s  CJK渲染: %s'):format(
-            S.overlays_on and '开' or '关', S.render_cjk and '就绪' or '待字体贴图(ticket-009)'),
+            S.overlays_on and '开' or '关',
+            S.render_cjk and ('就绪(' .. fanyi_count_map(S.font.by_cp) .. '字形)') or
+                (S.font.installed and '图集已装(未启用)' or '未启用(需 fanyi overlays on cjk)')),
+        ('  overlay小部件: fanyi.subtitle (%s)'):format(
+            overlay.isOverlayEnabled and tostring(overlay.isOverlayEnabled('fanyi.subtitle')) or '?'),
     }
     if S.safe_mode then
         table.insert(lines, '  ⛔ SAFE MODE: ' .. S.safe_reason)
@@ -463,10 +602,24 @@ function fanyi_command(args)
         if sub == 'on' then
             S.overlays_on = true
             if args[3] == 'cjk' then
+                if not S.font.installed then
+                    local ok, err = fanyi_font_load()
+                    if not ok then
+                        print('CJK 渲染不可用: ' .. err)
+                        print('仍以 ASCII 门控运行(游戏显示原文, §2.3)')
+                        return
+                    end
+                end
                 S.render_cjk = true
-                print('译文悬浮已开启(CJK 渲染已启用 — 请确保字体贴图已安装)')
+                -- 官方路径启用小部件: overlay enable fanyi.subtitle(持久化 overlay.json)
+                if overlay.rescan then pcall(overlay.rescan) end
+                if dfhack.run_command then
+                    pcall(dfhack.run_command, 'overlay', 'enable', 'fanyi.subtitle')
+                end
+                print(('译文悬浮已开启(CJK 贴图就绪: %d 字形, tile %dx%d)')
+                    :format(fanyi_count_map(S.font.by_cp), S.font.tile_w, S.font.tile_h))
             else
-                print('译文悬浮已开启(ASCII 可用; CJK 需字体贴图, 见 audit §渲染)')
+                print('译文悬浮已开启(ASCII 可用; CJK 需字形图集: fanyi overlays on cjk)')
             end
         elseif sub == 'off' then
             S.overlays_on = false
@@ -487,15 +640,17 @@ function fanyi_command(args)
         print('pending=', #S.pending, 'inflight=', #S.sent,
               'readbuf=', #S.readbuf, 'retry_after=', S.retry_after)
         print('displayed=', #S.render_lines, 'client=', S.client ~= nil, 'euid=', tostring(S.timer_euid))
+        print('font: installed=', S.font.installed, 'tile=', S.font.tile_w .. 'x' .. S.font.tile_h,
+              'glyphs=', fanyi_count_map(S.font.by_cp))
     else
         print([[
 用法:
   fanyi status              状态/统计
   fanyi start|stop          启停捕获+轮询(--@ enable=true 默认自启)
   fanyi overlays on|off    译文悬浮(off: 游戏显示原文 §2.3)
-  fanyi overlays on cjk    字体贴图就绪后再开 CJK 绘制(§渲染)
+  fanyi overlays on cjk    启用中文贴图(需字形图集 hack/data/fanyi-font/)
   fanyi clear              清空显示与去重
-  fanyi debug              内部细节
+  fanyi debug              内部细节(含字体图集状态)
 ]])
     end
 end

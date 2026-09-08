@@ -17,6 +17,9 @@ config/providers.yaml
 *.db
 *.sqlite3
 data/
+# 例外: 字形图集是刻意入库的安装产物(install-dfhack.sh 拷贝到游戏)
+!dfhack/data/
+!dfhack/data/**
 logs/
 .unattended/.round_mark
 .unattended/STOPPED

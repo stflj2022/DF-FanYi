@@ -3,6 +3,42 @@
 -- 用法: run_fanyi_tests.lua <scenario> <repo_root> <tmpdir>
 local path = {...}
 
+-- ---------- 最小 defclass(gui.class 同义实现, 供 overlay widget 类定义) ----------
+-- 支持: defclass(名字(可为nil), 父类)、ATTRS 合成、cls{attrs} 构造、方法沿父链解析。
+local function defclass(name, parent)
+    local cls = {}
+    cls.__parent = parent
+    cls.ATTRS = {}
+    cls.__index = cls
+    setmetatable(cls, {
+        __call = function(c, attrs)
+            local obj = setmetatable({}, c)
+            local defaults = {}
+            local p = c
+            while p do
+                for k, v in pairs(p.ATTRS or {}) do
+                    if defaults[k] == nil then defaults[k] = v end
+                end
+                p = p.__parent
+            end
+            for k, v in pairs(defaults) do obj[k] = v end
+            for k, v in pairs(attrs or {}) do obj[k] = v end
+            if obj.init then obj:init(attrs) end
+            return obj
+        end,
+        __index = function(c, k)
+            local p = rawget(c, '__parent')
+            while p do
+                local v = rawget(p, k)
+                if v ~= nil then return v end
+                p = rawget(p, '__parent')
+            end
+            return nil
+        end,
+    })
+    return cls
+end
+
 -- ---------- 最小 JSON 编码/解码(模拟 DFHack 捆绑 json) ----------
 local json = {}
 
@@ -147,6 +183,9 @@ local M = {
     frames = {},          -- {euid=, left=, fn=}
     auto_enable = true,
     events_out = {},      -- 测试可断言: 抓到的 TextEvent(引擎侧收到的)
+    run_commands = {},    -- dfhack.run_command 记录 {'overlay','enable','fanyi.subtitle'}
+    texture_loads = {},   -- dfhack.textures.loadTileset 参数记录
+    rescan_calls = 0,
 }
 
 function M.set_version(dfver, dhver)
@@ -257,7 +296,13 @@ env.dfhack = {
     getDFHackVersion = function() return M.dfhack_version end,
     getTickCount = function() return M.tick end,
     getDFPath = function() return M.tmpdir end,
+    getHackPath = function() return M.tmpdir .. '/hack/' end,
     df2console = function(s) return s end,
+    run_command = function(...)
+        local argv = {}
+        for i = 1, select('#', ...) do argv[i] = tostring(select(i, ...)) end
+        M.run_commands[#M.run_commands + 1] = argv
+    end,
     timeout = function(frames, unit, fn, id)
         M.euid = M.euid + 1
         M.frames[#M.frames + 1] = {euid = M.euid, left = frames, fn = fn, id = id}
@@ -278,6 +323,69 @@ env.df = {
         find = function(id) return M.reports[id] end,
     },
 }
+-- dfhack.textures mock: loadTileset 返回无限句柄表(句柄=base+i),
+-- getTexposByHandle 确定性映射 500000+handle → 测试可反推每个 cp 的 texpos。
+env.dfhack.textures = {
+    next_handle = 100,
+    loadTileset = function(path, w, h, is32)
+        local base = env.dfhack.textures.next_handle
+        env.dfhack.textures.next_handle = base + 100000
+        M.texture_loads[#M.texture_loads + 1] = {path = path, tile_w = w, tile_h = h}
+        return setmetatable({}, {__index = function(_, i) return base + i end})
+    end,
+    getTexposByHandle = function(handle) return 500000 + handle end,
+}
+
+-- plugins.overlay mock: OverlayWidget 基类 + rescan 计数
+local overlay_mod = {
+    OverlayWidget = defclass(nil, nil),
+    rescan = function() M.rescan_calls = M.rescan_calls + 1 end,
+}
+package.preload['plugins.overlay'] = function() return overlay_mod end
+
+env.defclass = defclass
+env.overlay = overlay_mod  -- 便于测试直接取 OverlayWidget 基类
+
+-- ---------- 测试辅助: 字形图集安装 / mock painter ----------
+
+-- 在 tmpdir/hack/data/fanyi-font/ 写假图集(真实 PNG 二进制不重要 — textures 已 mock)
+function M.install_font(pages, tile_w, tile_h)
+    tile_w = tile_w or 8
+    tile_h = tile_h or 12
+    local dir = M.tmpdir .. '/hack/data/fanyi-font/'
+    os.execute('mkdir -p "' .. dir .. '"')
+    for name, cps in pairs(pages) do
+        local f = assert(io.open(dir .. name, 'wb'))
+        f:write('FAKEPNG')
+        f:close()
+    end
+    local page_list = {}
+    for name, cps in pairs(pages) do
+        page_list[#page_list + 1] = {png = name, cols = 64, rows = 64,
+                                     count = #cps, cps = cps}
+    end
+    table.sort(page_list, function(a, b) return a.png < b.png end)
+    local f = assert(io.open(dir .. 'index.json', 'w'))
+    f:write(json.encode({version = 1, tile_w = tile_w, tile_h = tile_h, pages = page_list}))
+    f:close()
+    return dir
+end
+
+-- mock painter: 记录 tile 贴图调用 {x, y, texpos}; seek 链式
+function M.make_dc()
+    local dc = {tiles = {}, texts = {}, x = 0, y = 0}
+    function dc:seek(x, y) self.x = x; self.y = y; return self end
+    function dc:tile(ch, texpos, pen)
+        self.tiles[#self.tiles + 1] = {x = self.x, y = self.y, texpos = texpos, ch = ch}
+        return self
+    end
+    function dc:string(text, pen)
+        self.texts[#self.texts + 1] = {x = self.x, y = self.y, text = text}
+        return self
+    end
+    return dc
+end
+
 M.eventful = {
     eventType = {REPORT = 1},
     onReport = {},
@@ -320,8 +428,8 @@ env.fanyi_state = nil  -- script 自行创建
 package.preload['plugins.eventful'] = function() return M.eventful end
 package.preload['plugins.luasocket'] = function() return luasocket end
 
--- overlay 为惰性: 脚本目前只在 fanyi overlays on 时创建 widget? 否——脚本不实例化
--- overlay(渲染纯函数化), 故无需 mock overlay/widgets。
+-- overlay: ticket-009 起 fanyi.lua require('plugins.overlay') 并定义 OVERLAY_WIDGETS;
+-- 上方已 preload mock(OverlayWidget 基类 + rescan 计数), 无需真实 widget 框架。
 
 -- ---------- 装载真实脚本 ----------
 local script_path = path[1]
@@ -347,5 +455,6 @@ end
 
 M.json = json
 M.state = function() return env_saved.fanyi_state end
+M.env = env_saved  -- 脚本全局(如 OVERLAY_WIDGETS / fanyi_utf8_codepoints)
 
 return M

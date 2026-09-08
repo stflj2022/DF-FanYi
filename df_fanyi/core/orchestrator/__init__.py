@@ -1,4 +1,16 @@
-"""翻译编排器 —— ticket-004/005 真管线(保护→缓存→词典→规则→本地LLM→验证→还原)。
+"""翻译编排器 —— ticket-004/005 真管线 + ticket-006 L2 SQLite 持久层。
+
+管线: 保护→缓存(L1 内存 → L2 SQLite)→词典→规则→本地LLM→验证→还原。
+
+L2 持久层(§9/§8.2, ticket-006):
+- L1 未命中 → L2 查询; 命中 cache_hit=true 且绝不再调 LLM(验收: 假 LLM 计数为证);
+- 成功译文写回 L2(含 model/provider/confidence, usage_count 首写=1);
+- L1 命中同样写穿计数(tm_bump_usage) → §38 高频提升依据;
+- usage_count>10 的高频文本启动时 warm_l1 预热进 L1(§38 常驻);
+- 失败回退不写 L2(§56 禁止无效缓存污染);
+- store.term_lookup 提供数据库术语(term add 后立即生效, §8.1 与内存 seed 合并查询)。
+
+工程书 §11 伪代码顺序 + ticket-005 §22-24:
 
 工程书 §11 伪代码顺序 + ticket-005 §22-24:
     normalize → protect(markup/变量占位) → cache.lookup(hash) → terminology.lookup
@@ -20,7 +32,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from df_fanyi.core.cache import CacheEntry, LRUCache
 from df_fanyi.core.parser import normalize_text, source_hash
@@ -28,6 +40,9 @@ from df_fanyi.core.protector import Protector
 from df_fanyi.core.rules import RULE_THRESHOLD, RuleEngine
 from df_fanyi.core.validator import Validator
 from df_fanyi.database.terminology import Terminology
+
+if TYPE_CHECKING:
+    from df_fanyi.database.store import SQLiteStore
 
 logger = logging.getLogger("df_fanyi.orchestrator")
 
@@ -65,6 +80,7 @@ class Orchestrator:
         validator: Validator | None = None,
         cache: LRUCache | None = None,
         protector: Protector | None = None,
+        store: "SQLiteStore | None" = None,  # ticket-006: L2 SQLite 持久层(可空)
         model_name: str = "gemma-4b-trans",
         provider: str = "ollama",
         rule_threshold: float = RULE_THRESHOLD,
@@ -76,6 +92,7 @@ class Orchestrator:
         self._validator = validator or Validator()
         self._protector = protector or Protector()
         self._cache = cache or LRUCache(cache_capacity)
+        self._store = store
         self._model_name = model_name
         self._provider = provider
 
@@ -91,9 +108,11 @@ class Orchestrator:
         protected, restore_map = self._protector.protect(normalized)
         digest = source_hash(protected, context)  # §37: hash 含相关上下文
 
-        # L1 缓存(§9)
+        # L1 缓存(§9) —— 命中: 写穿计数(高频提升依据 §38), 不调 LLM
         entry = self._cache.get(digest)
         if entry is not None:
+            if self._store is not None:
+                self._store.tm_bump_usage(digest)
             return TranslationResult(
                 entry.text,
                 entry.source_text,
@@ -104,8 +123,37 @@ class Orchestrator:
                 cache_hit=True,
             )
 
-        # 术语词典: 精确匹配直返(§11)
+        # L2 SQLite 持久缓存(§9, ticket-006): L1 miss → L2 查询
+        if self._store is not None:
+            tm_row = self._store.tm_lookup(digest)
+            if tm_row is not None:
+                self._store.tm_bump_usage(digest)  # §38 命中计数
+                self._cache.put(
+                    digest,
+                    CacheEntry(
+                        source_text=tm_row["source_text"],
+                        text=tm_row["translated_text"],
+                        model=tm_row.get("model") or self._model_name,
+                        provider=tm_row.get("provider") or self._provider,
+                        confidence=float(tm_row.get("confidence") or 0.0),
+                    ),
+                )
+                return TranslationResult(
+                    tm_row["translated_text"],
+                    tm_row["source_text"],
+                    model=tm_row.get("model") or self._model_name,
+                    provider=tm_row.get("provider") or self._provider,
+                    confidence=float(tm_row.get("confidence") or 0.0),
+                    latency_ms=_ms_since(start),
+                    cache_hit=True,
+                )
+
+        # 术语词典: 内存 seed 精确匹配直返(§11); miss 时下探数据库术语(§8.1)
         term = self._terminology.lookup(protected)
+        if term is None and self._store is not None:
+            tm_term = self._store.term_lookup(protected)
+        else:
+            tm_term = None
         if term is not None:
             return self._finalize(
                 TranslationResult(
@@ -118,6 +166,21 @@ class Orchestrator:
                 ),
                 digest,
                 normalized,
+                context_hash=_context_hash(context),
+            )
+        if tm_term is not None:
+            return self._finalize(
+                TranslationResult(
+                    tm_term["target"],
+                    normalized,
+                    model="dictionary",
+                    provider="local",
+                    confidence=1.0,  # 术语精确命中 = 高置信(§34 ≈0.1 档)
+                    latency_ms=_ms_since(start),
+                ),
+                digest,
+                normalized,
+                context_hash=_context_hash(context),
             )
 
         # 规则引擎: 模板命中且置信度 ≥ 阈值才接受(§11)
@@ -134,6 +197,7 @@ class Orchestrator:
                 ),
                 digest,
                 normalized,
+                context_hash=_context_hash(context),
             )
 
         # 本地 LLM(§14/§15 E4B); 无 LLM 配置 → 离线回退
@@ -196,15 +260,42 @@ class Orchestrator:
             ),
             digest,
             normalized,
+            context_hash=_context_hash(context),
         )
+
+    def warm_l1(self, threshold: int = 10) -> int:
+        """§38 高频提升: usage_count > threshold 的译文预热进 L1(常驻), 启动时调用。
+
+        返回预热条数。预热后这些高频句首次翻译直接 L1 命中(不落 L2/不调 LLM)。
+        """
+        if self._store is None:
+            return 0
+        warmed = 0
+        for row in self._store.tm_frequent(threshold=threshold):
+            self._cache.put(
+                row["source_hash"],
+                CacheEntry(
+                    source_text=row["source_text"],
+                    text=row["translated_text"],
+                    model=row.get("model") or self._model_name,
+                    provider=row.get("provider") or self._provider,
+                    confidence=float(row.get("confidence") or 0.0),
+                ),
+            )
+            warmed += 1
+        if warmed:
+            logger.info("§38 高频文本预热 L1: %d 条", warmed)
+        return warmed
 
     def _finalize(
         self,
         result: TranslationResult,
         digest: str,
         normalized: str,
+        *,
+        context_hash: str | None = None,
     ) -> TranslationResult:
-        """成功结果写入 L1 缓存(失败回退不写, 见 §56/§9)。"""
+        """成功结果写入 L1(+L2 SQLite)缓存; 失败回退不写(§56/§9)。"""
         self._cache.put(
             digest,
             CacheEntry(
@@ -215,7 +306,25 @@ class Orchestrator:
                 confidence=result.confidence,
             ),
         )
+        if self._store is not None:
+            # §8.2/§38: 译文写回(含 model/provider/confidence, 首写 usage_count=1)
+            self._store.tm_upsert(
+                digest,
+                normalized,
+                result.text,
+                context_hash=context_hash,
+                model=result.model,
+                provider=result.provider,
+                confidence=result.confidence,
+            )
         return result
+
+
+def _context_hash(context: dict[str, Any] | None) -> str | None:
+    """上下文的独立哈希(§8.2 context_hash 列, 记录用; 主 key 仍是含上下文的 source_hash)。"""
+    if not context:
+        return None
+    return source_hash("", context)
 
 
 def _ms_since(start: float) -> int:

@@ -128,3 +128,81 @@ def test_ollama_down_logs_fallback(tmp_path: Path) -> None:
     after = log.read_text(encoding="utf-8").count("回退原文")
     assert after > before, "本次运行未新增 回退原文 日志记录"
     assert "fallback" in log.read_text(encoding="utf-8").lower(), "日志未记录 fallback"
+
+
+# --- ticket-006: 术语管理 CLI(§8.1) ----------------------------------------
+
+def _term_config(tmp_path: Path) -> tuple[Path, Path]:
+    """写一份显式配置: 库文件指向临时目录(测试不落用户目录/仓库默认库)。"""
+    db = tmp_path / "terms.db"
+    cfg = tmp_path / "terms.yaml"
+    cfg.write_text(f"cache:\n  l2_path: {db}\n", encoding="utf-8")
+    return cfg, db
+
+
+def test_term_help_lists_add_and_list() -> None:
+    p = _run("term", "--help")
+    assert p.returncode == 0, p.stderr
+    assert "add" in p.stdout and "list" in p.stdout
+
+
+def test_term_add_then_list(tmp_path: Path) -> None:
+    """验收: `df-fanyi term add` 后 `term list` 可见(locked 默认 false)。"""
+    cfg, db = _term_config(tmp_path)
+    p = _run("term", "add", "--config", str(cfg), "Goblin", "哥布林")
+    assert p.returncode == 0, p.stderr
+    assert db.exists(), "term add 应创建库文件"
+    p2 = _run("term", "list", "--config", str(cfg))
+    assert p2.returncode == 0, p2.stderr
+    assert "Goblin" in p2.stdout and "哥布林" in p2.stdout
+    assert "locked\t0" in p2.stdout.replace(" ", "").replace("\t\t", "\t") or \
+        _locked_col(p2.stdout) == "0", "locked 默认应为 false(0)"
+
+
+def _locked_col(stdout: str) -> str:
+    """从 term list 制表输出取第 6 列(locked)。"""
+    for line in stdout.strip().splitlines()[1:]:  # 跳过表头
+        cols = line.split("\t")
+        return cols[5] if len(cols) > 5 else "?"
+    return "?"
+
+
+def test_term_add_locked_and_list_locked_only(tmp_path: Path) -> None:
+    cfg, _ = _term_config(tmp_path)
+    p = _run("term", "add", "--config", str(cfg), "Goblin", "哥布林", "--locked", "--category", "creature")
+    assert p.returncode == 0, p.stderr
+    p = _run("term", "add", "--config", str(cfg), "Apple", "苹果")
+    assert p.returncode == 0, p.stderr
+    p2 = _run("term", "list", "--config", str(cfg))
+    assert _locked_col(p2.stdout) in ("0", "1")
+    p3 = _run("term", "list", "--locked-only", "--config", str(cfg))
+    assert p3.returncode == 0, p3.stderr
+    assert "Goblin" in p3.stdout and "Apple" not in p3.stdout, "locked-only 应只含锁定词条"
+
+
+def test_term_add_updates_existing(tmp_path: Path) -> None:
+    """重复 add 同源词条 = 更新不重复插入。"""
+    cfg, _ = _term_config(tmp_path)
+    assert _run("term", "add", "--config", str(cfg), "Goblin", "哥布林").returncode == 0
+    assert _run("term", "add", "--config", str(cfg), "Goblin", "地精").returncode == 0
+    out = _run("term", "list", "--config", str(cfg)).stdout
+    assert out.count("Goblin") == 1, "同源词条重复 add 不应产生重复行"
+
+
+def test_term_add_affects_translation(tmp_path: Path) -> None:
+    """验收: CLI 添加的词条立即参与翻译管线(整句精确匹配, 词典命中)。"""
+    cfg, _ = _term_config(tmp_path)
+    p = _run("term", "add", "--config", str(cfg), "Goblin", "哥布林", "--locked")
+    assert p.returncode == 0, p.stderr
+    p2 = _run(
+        "translate",
+        "--config",
+        str(cfg),
+        "--json",
+        stdin="Goblin\n",
+    )
+    assert p2.returncode == 0, p2.stderr
+    data = json.loads(p2.stdout)
+    assert data["text"] == "哥布林"
+    assert data["model"] == "dictionary"
+    assert data["confidence"] == 1.0

@@ -49,6 +49,36 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="显式配置文件(全局位置或此处均可)",
     )
+
+    term = sub.add_parser("term", help="术语管理(工程书 §8.1 / ticket-006)")
+    term.add_argument(
+        "--config",
+        metavar="PATH",
+        help="显式配置文件(全局位置或此处均可)",
+    )
+    term_sub = term.add_subparsers(dest="term_cmd", metavar="子命令", required=True)
+
+    add = term_sub.add_parser("add", help="添加/更新术语(同 source 为更新, locked 默认 false)")
+    add.add_argument("source", help="原文(整句精确匹配, 大小写不敏感)")
+    add.add_argument("target", help="译文")
+    add.add_argument("--category", help="分类(如 creature/race/job)")
+    add.add_argument("--priority", type=int, default=100, help="优先级(默认 100, 越小越靠前)")
+    add.add_argument("--locked", action="store_true", help="锁定词条(locked=true 优先级最高, §11)")
+    add.add_argument("--source-type", help="来源类型(seed/manual/...)")
+    add.add_argument(
+        "--config",
+        metavar="PATH",
+        help="显式配置文件(全局位置或此处均可)",
+    )
+
+    lst = term_sub.add_parser("list", help="列出术语")
+    lst.add_argument("--category", help="只列出该分类")
+    lst.add_argument("--locked-only", action="store_true", help="只列出锁定词条")
+    lst.add_argument(
+        "--config",
+        metavar="PATH",
+        help="显式配置文件(全局位置或此处均可)",
+    )
     return parser
 
 
@@ -59,6 +89,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_translate(args)
         if args.command == "selftest":
             return _cmd_selftest(args)
+        if args.command == "term":
+            return _cmd_term(args)
     except ConfigError as exc:
         print(f"配置错误: {exc}", file=sys.stderr)
         return 2
@@ -133,3 +165,44 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
         print(line)
     print("df-fanyi 自检" + ("通过 ✅" if ok else "失败 ❌"))
     return 0 if ok else 1
+
+
+def _cmd_term(args: argparse.Namespace) -> int:
+    """术语管理(§8.1, ticket-006): `df-fanyi term add/list`。
+
+    term add: 有则更新, 无则插入, locked 默认 false;
+    term list: 制表输出 id/source/target/category/priority/locked(locked=0|1)。
+    """
+    from df_fanyi.database.store import store_from_config
+
+    if not hasattr(args, "term_cmd") or not args.term_cmd:
+        print("term 需要子命令: add | list", file=sys.stderr)
+        return 2
+    cfg = _load_config(args)
+    with store_from_config(cfg) as store:
+        if args.term_cmd == "add":
+            store.term_add(
+                args.source,
+                args.target,
+                category=getattr(args, "category", None),
+                priority=int(getattr(args, "priority", 100) or 100),
+                locked=bool(getattr(args, "locked", False)),
+                source_type=getattr(args, "source_type", None),
+            )
+            locked = "锁定" if args.locked else "未锁定"
+            print(f"术语已保存: {args.source} → {args.target} ({locked})")
+            return 0
+        if args.term_cmd == "list":
+            rows = store.term_list(
+                category=getattr(args, "category", None),
+                locked_only=bool(getattr(args, "locked_only", False)),
+            )
+            print("id\tsource\ttarget\tcategory\tpriority\tlocked")
+            for r in rows:
+                print(
+                    f"{r['id']}\t{r['source']}\t{r['target']}\t"
+                    f"{r['category'] or ''}\t{r['priority']}\t{int(r['locked'])}"
+                )
+            return 0
+    print(f"未知 term 子命令: {args.term_cmd}", file=sys.stderr)
+    return 2

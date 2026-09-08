@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from df_fanyi.config import Config
 from df_fanyi.core.orchestrator import Orchestrator
+from df_fanyi.database.store import store_from_config
 from df_fanyi.local.gemma import GemmaTranslator
 from df_fanyi.providers.ollama_client import OllamaChatClient
 
@@ -23,9 +24,13 @@ def build_orchestrator(cfg: Config) -> Orchestrator:
     model = str(llm_cfg.get("model", OllamaChatClient.DEFAULT_MODEL))
     timeout = float(llm_cfg.get("timeout_s", 120.0))
     client = OllamaChatClient(host=host, model=model, timeout=timeout)
-    return Orchestrator(
+    store = store_from_config(cfg)  # ticket-006: L2 SQLite 持久层
+    orch = Orchestrator(
         llm=GemmaTranslator(client, model=model),
         model_name=model,
         provider="ollama",
         cache_capacity=int(cfg.cache.get("l1_size", 512)),
+        store=store,
     )
+    orch.warm_l1()  # §38 高频文本常驻
+    return orch

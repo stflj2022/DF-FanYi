@@ -120,6 +120,9 @@ class Config:
         l1 = self.cache.get("l1_size")
         if l1 is not None and (not isinstance(l1, int) or isinstance(l1, bool) or l1 < 1):
             raise ConfigError("cache.l1_size 必须为 ≥1 的整数")
+        l2 = self.cache.get("l2_path")
+        if l2 is not None and not isinstance(l2, str):
+            raise ConfigError("cache.l2_path 必须为字符串路径(§8 L2 SQLite 库文件)")
         for p in self.providers:
             if not p.name or not p.base_url or not p.model:
                 raise ConfigError(f"provider 缺少 name/base_url/model: {p}")

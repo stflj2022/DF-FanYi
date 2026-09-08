@@ -16,6 +16,7 @@ config/providers.yaml
 # 运行时
 *.db
 *.sqlite3
+data/
 logs/
 .unattended/.round_mark
 .unattended/STOPPED

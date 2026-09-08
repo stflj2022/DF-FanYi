@@ -10,6 +10,7 @@ logging:                 # 工程书 §45
 cache:                   # 工程书 §9/§37: 两级缓存(L1 内存 LRU, L2 SQLite)
   l1_size: 512           # L1 最大句数(内存)
   l2_backend: sqlite     # L2 后端; ticket-006 落地
+  l2_path: data/engine.db  # L2 SQLite 库文件(相对仓库根; 测试/运维可覆盖为临时路径)
 
 context:                 # 工程书 §36: 上下文不允许无限增长
   max_tokens: 3500

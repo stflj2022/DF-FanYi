@@ -22,8 +22,14 @@ def main():
             iface.CloseNotification(dbus.UInt32(int(old)))
     except Exception:
         pass
-    # timeout=-1 → 永不自动过期, 手动点击关闭(规范: 0=由服务器决定, -1=永驻)
-    nid = iface.Notify(app, dbus.UInt32(0), "", summary, body, [], {}, dbus.Int32(-1))
+    # 永驻关键: 必须 urgency=critical — omarchy 的 durationFor() 只对
+    # NotificationUrgency.Critical 返回 0(永不消失); normal/low 被截断到
+    # 8s/5s(max 30s), 再大的 expireTimeout 也没用。
+    # spec: timeout=0 由服务器决定; 配合 critical 才真正永驻。
+    hints = dbus.Dictionary({
+        "urgency": dbus.Byte(2),  # critical
+    }, signature="sv")
+    nid = iface.Notify(app, dbus.UInt32(0), "", summary, body, [], hints, dbus.Int32(0))
     os.makedirs(os.path.dirname(STATE), exist_ok=True)
     open(STATE, "w").write(str(nid))
     print("notif_id=%s" % nid)

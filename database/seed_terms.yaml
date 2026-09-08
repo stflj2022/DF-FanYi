@@ -1,0 +1,150 @@
+# DF-FanYi seed 术语词典(ticket-004, database/ 内置, YAML 起步; SQLite 由 ticket-006)
+#
+# 数据来源与许可:
+#   本表为 dfi18n-data-zh-hans(simple/zh-Hans.csv, 901 行)与
+#   dfzh(dfzh_dict_exact.csv, 1884 行)高频词的手工整理子集, 经人工校对补充。
+#   原始数据许可: CC BY-NC 4.0(矮人要塞中文维基翻译组)
+#   —— 非商业使用; 转载/再分发须保留本署名。详见 docs/audits/REUSE_PLAN.md §6。
+#
+# 字段:
+#   source: 英文原词(查询大小写不敏感, 整句精确匹配)
+#   target: 简体中文译名
+#   locked: true = 高价值锁定词(多词条冲突时优先; 工单点名词一律 locked)
+#
+# 词条规范: 整句精确命中直接返回(confidence=1.0); 规则引擎可复用其短语替换。
+
+terms:
+  # --- 工单点名必需词(locked) ---
+  - {source: "dwarf", target: "矮人", locked: true}
+  - {source: "wooden barrel", target: "木桶", locked: true}
+  - {source: "carpenter", target: "木匠", locked: true}
+  - {source: "cancel", target: "取消", locked: true}
+  - {source: "fortress", target: "要塞", locked: true}
+  - {source: "migrate", target: "迁徙", locked: true}
+  # --- 种族/生物 ---
+  - {source: "dwarves", target: "矮人", locked: true}
+  - {source: "goblin", target: "哥布林"}
+  - {source: "goblins", target: "哥布林"}
+  - {source: "elf", target: "精灵"}
+  - {source: "elves", target: "精灵"}
+  - {source: "human", target: "人类"}
+  - {source: "humans", target: "人类"}
+  - {source: "kobold", target: "狗头人"}
+  - {source: "troll", target: "巨魔"}
+  - {source: "giant", target: "巨人"}
+  - {source: "dragon", target: "龙"}
+  - {source: "demon", target: "恶魔"}
+  - {source: "werewolf", target: "狼人"}
+  - {source: "vampire", target: "吸血鬼"}
+  - {source: "zombie", target: "僵尸"}
+  - {source: "skeleton", target: "骷髅"}
+  - {source: "migrant", target: "移民"}
+  - {source: "migration", target: "迁徙"}
+  - {source: "caravan", target: "商队"}
+  # --- 职业/身份 ---
+  - {source: "mason", target: "石匠"}
+  - {source: "miner", target: "矿工"}
+  - {source: "farmer", target: "农民"}
+  - {source: "fisher", target: "渔民"}
+  - {source: "hunter", target: "猎人"}
+  - {source: "butcher", target: "屠夫"}
+  - {source: "tanner", target: "鞣革匠"}
+  - {source: "brewer", target: "酿酒师"}
+  - {source: "cook", target: "厨师"}
+  - {source: "smith", target: "铁匠"}
+  - {source: "engraver", target: "雕刻师"}
+  - {source: "architect", target: "建筑师"}
+  - {source: "broker", target: "经纪人"}
+  - {source: "doctor", target: "医生"}
+  - {source: "soldier", target: "士兵"}
+  - {source: "militia", target: "民兵"}
+  - {source: "mayor", target: "市长"}
+  - {source: "baron", target: "男爵"}
+  - {source: "noble", target: "贵族"}
+  - {source: "child", target: "儿童"}
+  - {source: "baby", target: "婴儿"}
+  # --- 材料/矿物 ---
+  - {source: "wood", target: "木材"}
+  - {source: "stone", target: "石头"}
+  - {source: "rock", target: "岩石"}
+  - {source: "iron", target: "铁"}
+  - {source: "copper", target: "铜"}
+  - {source: "bronze", target: "青铜"}
+  - {source: "silver", target: "银"}
+  - {source: "gold", target: "金"}
+  - {source: "platinum", target: "铂金"}
+  - {source: "pig iron", target: "生铁"}
+  - {source: "steel", target: "钢"}
+  - {source: "anvil", target: "铁砧"}
+  - {source: "forge", target: "熔炉"}
+  - {source: "furnace", target: "熔炉"}
+  - {source: "workshop", target: "作坊"}
+  # --- 地貌/设施 ---
+  - {source: "cavern", target: "洞穴"}
+  - {source: "cave", target: "山洞"}
+  - {source: "mountain", target: "山"}
+  - {source: "hill", target: "丘陵"}
+  - {source: "river", target: "河"}
+  - {source: "lake", target: "湖"}
+  - {source: "ocean", target: "海洋"}
+  - {source: "field", target: "田地"}
+  - {source: "farm", target: "农场"}
+  - {source: "farm plot", target: "农田"}
+  - {source: "pasture", target: "牧场"}
+  - {source: "floodgate", target: "水闸"}
+  - {source: "hatch", target: "活板门"}
+  - {source: "mechanism", target: "机关"}
+  - {source: "trap", target: "陷阱"}
+  - {source: "cage", target: "笼子"}
+  - {source: "nest", target: "巢"}
+  - {source: "pen", target: "围栏"}
+  # --- 物品/家具 ---
+  - {source: "rock door", target: "石门"}
+  - {source: "bed", target: "床"}
+  - {source: "chair", target: "椅子"}
+  - {source: "table", target: "桌子"}
+  - {source: "chest", target: "箱子"}
+  - {source: "cabinet", target: "柜子"}
+  - {source: "coffer", target: "保险箱"}
+  - {source: "bin", target: "储物箱"}
+  - {source: "barrel", target: "桶"}
+  - {source: "pot", target: "锅"}
+  - {source: "jug", target: "罐"}
+  - {source: "bucket", target: "水桶"}
+  - {source: "millstone", target: "磨盘"}
+  - {source: "quern", target: "石磨"}
+  # --- 食物/作物 ---
+  - {source: "plump helmet", target: "胖头盔"}
+  - {source: "mushroom", target: "蘑菇"}
+  - {source: "ale", target: "麦酒"}
+  - {source: "beer", target: "啤酒"}
+  - {source: "wine", target: "葡萄酒"}
+  - {source: "meat", target: "肉"}
+  - {source: "fish", target: "鱼"}
+  - {source: "cheese", target: "奶酪"}
+  # --- 材料制品/杂项 ---
+  - {source: "cloth", target: "布"}
+  - {source: "thread", target: "线"}
+  - {source: "leather", target: "皮革"}
+  - {source: "bone", target: "骨头"}
+  - {source: "shell", target: "贝壳"}
+  - {source: "crafts", target: "工艺品"}
+  # --- 家畜/动物 ---
+  - {source: "animal", target: "动物"}
+  - {source: "cat", target: "猫"}
+  - {source: "dog", target: "狗"}
+  - {source: "horse", target: "马"}
+  - {source: "cow", target: "牛"}
+  - {source: "sheep", target: "绵羊"}
+  - {source: "pig", target: "猪"}
+  - {source: "chicken", target: "鸡"}
+  - {source: "duck", target: "鸭子"}
+  - {source: "turkey", target: "火鸡"}
+  - {source: "goose", target: "鹅"}
+  - {source: "alpaca", target: "羊驼"}
+  - {source: "llama", target: "美洲驼"}
+  - {source: "donkey", target: "驴"}
+  - {source: "mule", target: "骡"}
+  - {source: "goat", target: "山羊"}
+  - {source: "rabbit", target: "兔子"}
+  - {source: "tortoise", target: "乌龟"}

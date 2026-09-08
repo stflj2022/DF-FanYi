@@ -1,9 +1,9 @@
-"""df-fanyi 命令行入口(ticket-003)。
+"""df-fanyi 命令行入口(ticket-003, ticket-004 接入真实管线)。
 
 子命令:
 - translate: 读 stdin 单句英文游戏文本 → 译文
-  (骨架期为占位译文, 真实管线 ticket-004 接入)
-- selftest: 配置加载 / 日志可写 / 编排器可用 自检
+  (ticket-004 起为真实管线: 缓存→词典→规则→本地LLM→验证)
+- selftest: 配置加载 / 日志可写 / 管线可用 自检
 """
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from df_fanyi import __version__
 from df_fanyi.config import Config, ConfigError, load_config
 from df_fanyi.core.orchestrator import Orchestrator
 from df_fanyi.logging_setup import engine_log_path, setup_logging
+from df_fanyi.pipeline import build_orchestrator
 
 logger = logging.getLogger("df_fanyi.cli")
 
@@ -35,9 +36,19 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", metavar="子命令", required=True)
 
     t = sub.add_parser("translate", help="翻译 stdin 的单句英文游戏文本")
+    t.add_argument(
+        "--config",
+        metavar="PATH",
+        help="显式配置文件(全局位置或此处均可)",
+    )
     t.add_argument("--json", action="store_true", help="输出 JSON(含 source/confidence 等字段)")
 
-    sub.add_parser("selftest", help="自检: 配置加载 / 日志可写 / 编排器可用")
+    s = sub.add_parser("selftest", help="自检: 配置加载 / 日志可写 / 管线可用")
+    s.add_argument(
+        "--config",
+        metavar="PATH",
+        help="显式配置文件(全局位置或此处均可)",
+    )
     return parser
 
 
@@ -74,15 +85,17 @@ def _cmd_translate(args: argparse.Namespace) -> int:
         print("输入为空", file=sys.stderr)
         return 2
 
-    orch = Orchestrator()  # 骨架: 占位假 LLM; ticket-004 替换为真实管线
+    orch = build_orchestrator(cfg)  # ticket-004: 真实管线(缓存→词典→规则→LLM→验证)
     result = orch.translate(text)
     logger.info(
-        "translate: model=%s provider=%s confidence=%.2f placeholder=%s latency=%dms",
+        "translate: model=%s provider=%s confidence=%.2f latency=%dms cache_hit=%s fallback=%s error=%s",
         result.model,
         result.provider,
         result.confidence,
-        result.is_placeholder,
         result.latency_ms,
+        result.cache_hit,
+        result.text == result.source_text,
+        result.error,
     )
 
     if args.json:
@@ -110,10 +123,10 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
         f"{sum(1 for p in cfg.providers if p.available)})",
         f"日志: {engine_log_path(cfg)}",
     ]
-    result = Orchestrator().translate("Dwarf")
+    result = build_orchestrator(cfg).translate("Dwarf")
     lines.append(
         f"翻译: model={result.model} 管线可用"
-        + ("(占位)" if result.is_placeholder else "")
+        + (f" (confidence={result.confidence})" if result.confidence else " (回退原文)")
     )
     ok = result.error is None
     for line in lines:

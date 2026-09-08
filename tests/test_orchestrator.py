@@ -1,9 +1,10 @@
-"""ticket-003 验收: 编排器骨架。
+"""ticket-004 验收: 编排器全管线(替换 ticket-003 占位骨架测试)。
 
 工程书依据:
 - §10 Translation API 字段对齐(text/source/model/confidence/latency/cache_hit)
-- §2.3/§30 失败铁律: LLM 任何异常 → 回退原文 + confidence=0, 绝不抛异常阻塞
+- §2.3/§30 失败铁律: LLM 任何异常/空输出 → 回退原文 + confidence=0, 绝不抛异常阻塞
 - 假 LLM 录制回放: 测试不依赖真实 ollama(工程书 Testing Decisions)
+- ticket-004: Dwarf→矮人(词典), wooden barrel→木桶(词典), 模板句→规则
 
 只测外部行为(translate 返回值), 不 mock 内部实现。
 """
@@ -27,19 +28,21 @@ class _Boom(Exception):
     pass
 
 
-def test_placeholder_translator_marks_placeholder() -> None:
+def test_dictionary_hit_for_dwarf() -> None:
+    """Test 1: Dwarf → 矮人(词典精确命中, 不再占位)。"""
     result = Orchestrator().translate("Dwarf")
     assert isinstance(result, TranslationResult)
-    assert "Dwarf" in result.text
-    assert result.is_placeholder is True
-    assert result.error is None
+    assert result.text == "矮人"
+    assert result.model == "dictionary"
+    assert result.confidence == 1.0
+    assert result.is_placeholder is False
 
 
 def test_fake_llm_output_is_returned() -> None:
-    orch = Orchestrator(llm=lambda text: "矮人", model_name="fake")
-    result = orch.translate("Dwarf")
-    assert result.text == "矮人"
-    assert result.source_text == "Dwarf"
+    orch = Orchestrator(llm=lambda text: "流浪狗生了一窝小狗。", model_name="fake")
+    result = orch.translate("Stray dog has given birth to puppies.")
+    assert result.text == "流浪狗生了一窝小狗。"
+    assert result.source_text == "Stray dog has given birth to puppies."
     assert result.model == "fake"
 
 
@@ -68,8 +71,8 @@ def test_llm_failure_falls_back_to_original_text() -> None:
 
 def test_empty_translation_falls_back_to_original() -> None:
     orch = Orchestrator(llm=lambda text: "   ")
-    result = orch.translate("Dwarf")
-    assert result.text == "Dwarf"
+    result = orch.translate("Stray dog has given birth to puppies.")
+    assert result.text == "Stray dog has given birth to puppies."
     assert result.confidence == 0.0
     assert result.error is not None
 
@@ -93,6 +96,6 @@ def test_orchestrator_never_raises() -> None:
 
 
 @pytest.mark.parametrize("text", ["Dwarf", "Urist cancels Make Wooden Barrel."])
-def test_placeholder_is_deterministic(text: str) -> None:
+def test_translation_is_deterministic(text: str) -> None:
     orch = Orchestrator()
     assert orch.translate(text).text == orch.translate(text).text

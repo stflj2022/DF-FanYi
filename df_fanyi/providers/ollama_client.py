@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Callable
+
+from df_fanyi.prompts import load_system_prompt
 
 # ---------------------------------------------------------------------------
 # 错误类型: 引擎上层(编排器, ticket-004+)据此回退显示原文, 绝不让游戏崩溃。
@@ -32,16 +33,10 @@ class OllamaEmptyResponse(OllamaError):
 
 # ---------------------------------------------------------------------------
 # 固化的中文翻译系统提示(与 docs/audits/ENVIRONMENT_AUDIT.md 实测一致)
+# 单源: prompts/translation_system_v1.txt(工程书 §19 版本化, §19.1 十二条 + §21 不可信内容)
 # ---------------------------------------------------------------------------
 
-TRANSLATION_SYSTEM_PROMPT = (
-    "你是矮人要塞(Dwarf Fortress)游戏文本翻译引擎。"
-    "把用户给出的英文游戏文本翻译成简体中文。"
-    "规则:1)只输出译文,不要任何解释、注释或原文;"
-    "2)保留专有名词(人名如Urist保留原文);"
-    "3)保留数字、标点结构与占位符;"
-    "4)使用简洁的游戏公告语气。"
-)
+TRANSLATION_SYSTEM_PROMPT = load_system_prompt("v1")
 
 @dataclass(frozen=True)
 class ChatResult:
@@ -77,6 +72,10 @@ def http_transport(host: str, timeout: float) -> Transport:
 
     url = host.rstrip("/") + "/api/chat"
 
+    # ollama 只在本机 127.0.0.1 监听: 显式禁代理, 避免环境 HTTP(S)_PROXY
+    # 把本地请求送进全局代理(断网/代理异常时误判为 ollama 停机)
+    _no_proxy = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
     def _call(endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
@@ -85,7 +84,7 @@ def http_transport(host: str, timeout: float) -> Transport:
             headers={"Content-Type": "application/json"},
         )
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with _no_proxy.open(req, timeout=timeout) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
             raise OllamaUnavailable(f"ollama 不可达({url}): {exc}") from exc

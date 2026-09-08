@@ -55,19 +55,30 @@
 2. 崩溃(官方声明测试版可能崩): 回滚两件套即可, 不影响存档结构; 另有 `.backup-before-dfint-*/`。
 3. 游戏升级后失效: 先看日志; offsets 是模式搜索一般自适应, 真失效需更新 df-translations/源码重跑脚本。
 
-## 画面美化:HEWN 图形包(2026-09-08 已装)
+## 画面美化:HEWN 图形包(2026-09-08 安装失败, 已弃用)
 
-经典免费版只有 ASCII 字符画(原版 art 目录仅 curses 字形集, png 数=0)。旧一代 Phoebus/DFgraphics
-已停更(最高支持 47.05), **v53 经典版现役方案是 HEWN**(DFFD id=17744, 目标 53.10, 经典版实测可用):
+> ⚠ 结论先行: **经典版 + 53.16 没有可用的现成图形包**, 最终改用零风险字体美化(见上)。
+> 以下为试错过程记录, 供后人避免重走弯路。
 
-- 已装: `data/mods/HEWN`(模组本体 6.5MB) + `data/init/colors.txt` 配色 + `data/art/black_background.bmp`
-  + `hack/data/art/`(DFHack 界面贴图), 备份在 `.backup-before-hewn-*/`
-- **激活方式(经典版特有)**: 经典免费版**没有主菜单 Mods 入口**(付费版才有, interfaces.csv 有
-  "Mods→模组"词条可证); 经典版在**创建新世界流程中**出现模组勾选步骤, 勾 HEWN → 生成世界。
-  已存在的世界无法追加模组。也可在标题屏跑 DFHack `gui/mod-manager`。
-- 装后建议把 设置→`Use Classic ASCII Glyphs` 设为 No, 否则强制回字符画
-- 回滚: 删 `data/mods/HEWN` + 还原备份里的 colors.txt/black_background.bmp/hack-data-art
-- 53.11~53.16 新增的少量对象暂无专属贴图, 会自动回退为字符, 属预期行为
+经典版无图形包时画面是 ASCII 字符画。旧一代 Phoebus/DFgraphics 已停更(最高 47.05),
+v53 现役方案 HEWN(DFFD id=17744, 目标 53.10, 经典版声称支持), 本机 53.16 三次组合全败:
+
+| 组合 | 结果 | 根因 |
+|---|---|---|
+| 启用 HEWN 带 raws | 闪退 SIGSEGV | 53.10 的 raws 与 53.16 原版不兼容, 世界生成引用不到 |
+| 只保留 HEWN(全勾掉 vanilla) | 黑屏 | 无任何原版数据 |
+| 纯贴图层(删 objects 保留 graphics) | 仍闪退 | overlay 插件空指针(crashlog 指向 overlay.plug.so) |
+
+**经典版与付费版的模组差异(实测)**:
+- 经典版**游戏根目录 `mods/`**(付费版才是 `data/mods`), 二进制里可见 "Could not make mods folder" 字样
+- 经典版**没有主菜单 Mods 入口**(付费版才有); 模组在创建新世界界面管理, 也可用 DFHack `gui/mod-manager`
+- `gui/mod-manager` 要求已载入世界, 且本质是个模组预设(保存/恢复)工具
+- 自写脚本 `hewn-enable.lua` 可直接往创建界面激活列表填条目(字段取 `.value`, 克隆用 `:new()`), 需重启后生效
+
+**已卸载**: `mods/HEWN`、`data/mods/HEWN`、`data/installed_mods` 全清, 还原 colors/black_background/hack 贴图。
+原地长效方案: 字体美化(见 GAME_STARTER_GUIDE)。
+
+## 已知限制
 
 ## 已知限制
 

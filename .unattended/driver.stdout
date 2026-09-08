@@ -1,0 +1,10 @@
+[2026-09-08 13:44:12] === UNATTENDED DRIVER STARTED v1.2.0 ===
+[2026-09-08 13:44:12] Project: DF-FanYi
+[2026-09-08 13:44:12] Providers: 1 configured
+[2026-09-08 13:44:12] Test command: python3 -m pytest tests/ -q
+[2026-09-08 13:44:12] Mode: (LIVE)
+[2026-09-08 13:44:12] Platform: Linux
+[2026-09-08 13:44:12] Timeout: 7200 s | Zero-output fuse: 900 s
+[2026-09-08 13:44:12] === ROUND 1 ===
+[2026-09-08 13:44:12] Provider: pi-primary
+[2026-09-08 13:44:12] Starting AI agent...

@@ -1,0 +1,8 @@
+{
+  "driver": { "providers": ["pi-primary"], "check_interval": 300,
+              "timeout": 7200, "zero_output_fuse": 900, "max_retries": 3, "dry_run": false },
+  "watchdog": { "check_interval_minutes": 10, "stuck_threshold_minutes": 45 },
+  "testing": { "command": "python3 -m pytest tests/ -q", "auto_commit": true },
+  "git": { "auto_push": true, "commit_message_format": "chore(driver)" },
+  "project": { "name": "DF-FanYi", "language": "Python", "root": "/home/wu/DF-FanYi" }
+}

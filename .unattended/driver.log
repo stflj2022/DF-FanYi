@@ -274,3 +274,31 @@ ticket-007 完成 ✅
 [2026-09-08 18:40:46] === ROUND 8 ===
 [2026-09-08 18:40:46] Provider: pi-primary
 [2026-09-08 18:40:46] Starting AI agent...
+## ticket-010 完成 — MVP 全部工单 001-010 已 done ✅
+
+**交付（commit `44d59c9`，全套件 310 passed / 1 skipped）：**
+
+### §54 Test 1-8 验收（真实 TCP 桥端到端，15 项全绿）
+| 项 | 结论 |
+|---|---|
+| Test 1-3 | 词典「矮人/木桶」+ 规则模板句同步返回 ✅ |
+| Test 4-5 | 变量/markup 多集守恒；LLM 丢弃 → §24 拒绝 → 原文兜底 ✅ |
+| Test 6 | 长句 queued 占位 → fetch_done 取回，主线程零阻塞 ✅ |
+| Test 7 | provider 全灭 20 句压测 + 纯离线：原文兜底、桥不倒 ✅ |
+| Test 8 | 慢 provider 超时 → 回退链，不卡死队列 ✅ |
+
+### 真实文本基准（60 句：公告 10 / 描述 25 / 历史 25，本机 DF 53.16）
+- LLM 实测 **12/12 验证通过（100%）**，延迟 p50 **58.5s** / p95 77.2s（CPU，含 thinking）→ 再次印证云端优先 ADR
+- 快路径真实流动句命中 0%（词典/规则仅覆盖术语与模板）——主力流量走 LLM，属预期架构行为
+- §34：`async_threshold` 实测**保持 0.25**，依据已注释进 `config/default.yaml`；发现复杂度分数对真实文本区分力弱，第三阶段云路由需叠加其他信号
+
+### 验收运行抓到的生产级缺陷（F1，已修）
+gemma-4b-trans 每次翻译前有 **~500 token thinking 阶段**（ollama 归入 `message.thinking`），旧 `num_predict=256` 被思考耗尽 → 正文空 + 超时空转（修复前 9/12 句失败）。修复：默认 256→**1024** + thinking 回归测试；复测 12/12 全过。
+
+### 文档与收尾
+- `docs/audits/MVP_ACCEPTANCE.md`（Test 1-8 逐条结论 + 数据表）
+- `docs/audits/IMPLEMENTATION_PLAN.md`（第三阶段草案 P3-1~P3-5：OpenAI provider / Pi Router adapter / 熔断 / 预算 / 词典反哺；**未建新工单文件**，不破坏驱动完工判定）
+- ticket-010 → done，已复制 `.unattended/tasks/done/`；驱动 next tick 检测 all_done 后应自停
+
+游戏内人工清单（B1-B6）仍在 `docs/audits/E2E_CHECKLIST.md` 等待真机会话验证。
+[2026-09-08 19:25:32] ✅ Round completed successfully

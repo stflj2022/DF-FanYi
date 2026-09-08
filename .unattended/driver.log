@@ -124,3 +124,18 @@ ticket-002 完成 ✅
 [2026-09-08 14:59:14] === ROUND 1 ===
 [2026-09-08 14:59:14] Provider: pi-primary
 [2026-09-08 14:59:14] Starting AI agent...
+## 本轮完成：ticket-004 核心翻译管线 ✅
+
+**交付**（commit `355f2d1`，123 passed / +72 测试）：
+- **管线**：normalize+source_hash(§37 上下文)→ L1 LRU 缓存 → 术语词典 → 规则引擎 → 本地 LLM → 验证，失败链全程回退原文 confidence=0 绝不抛（§2.3/§30）
+- **组件**：`core/parser`、`core/cache`（成功才写）、`database/terminology.py`+`seed_terms.yaml`（110+ 词条，点名 6 词 locked，CC BY-NC 4.0 署名）、`core/rules.py`（4 模板+最长匹配，阈值 0.9）、`local/gemma`+`ollama_client`（/api/chat，提示词单源版本化 v1，本地请求显式禁代理）、`core/validator`、`pipeline.py` 装配、CLI 接入真实管线
+
+**live ollama 验收**（三条路径全通）：
+- 词典：`Dwarf` → 矮人
+- 规则：`Urist cancels Make Wooden Barrel.` → Urist 取消制作木桶。
+- LLM：未知句 → 流浪狗生下了幼崽。（冷载 14.5s，conf 1.0，无错误）
+
+**⚠️ 并发事故（已处理）**：14:56 的 Round-3 agent 在 driver 14:59 重启后成为孤儿仍活跃写文件，覆盖了我写的 `test_terminology.py` 并独立提交 d7ec60b。已 SIGKILL 孤儿、恢复我的版本、核对无污染。**driver/watchdog 无孤儿回收机制**——已记入 scratchpad 待修，后续轮次开工前需查 `ps` 清理。
+
+**收尾**：ticket-004 状态 → done，归档至 `.unattended/tasks/done/`；两个逻辑提交（工单 + driver 工具），工作树干净（0 遗留）。当前 4/10 工单完成，下一张可做：ticket-005（pending，无 blocked）。
+[2026-09-08 15:24:04] ✅ Round completed successfully

@@ -156,3 +156,30 @@ ticket-002 完成 ✅
 [2026-09-08 16:00:10] === ROUND 4 ===
 [2026-09-08 16:00:10] Provider: pi-primary
 [2026-09-08 16:00:10] Starting AI agent...
+## 工单完成 ✅ — ticket-006: SQLite 持久层
+
+**选定工单**: 编号最小 pending 且 deps 全 done → **ticket-006**(blocked by ticket-004 ✓ done)。ticket-007/008 也满足条件但编号更大。
+
+### 交付内容(commit `1073e74`,已 push main)
+
+| 层 | 实现 |
+|---|---|
+| **`database/store.py`(新)** | `SQLiteStore` DAO:§8.1-8.4 四表列与工程书逐字一致 + WAL 模式 + 线程锁(`check_same_thread=False`,ticket-007 worker 可共用) |
+| **L2 缓存集成**(orchestrator) | L1 miss → L2 查询命中 `cache_hit=true` **绝不调 LLM**;成功译文写回含 model/provider/confidence(首写 `usage_count=1`);L1/L2 命中写穿计数(§38 依据);§56 失败回退不写 |
+| **高频提升 §38** | `warm_l1()`:usage_count>10 的译文启动时预热进 L1 常驻 |
+| **崩溃恢复 §42** | `recover_crashed()`:RUNNING→INTERRUPTED→重排队(PENDING,attempts+1,受 `max_attempts=3` 约束防死循环),中断行保留原 attempts 审计 |
+| **术语 CLI** | `df-fanyi term add/list`(locked 默认 false,同源=更新);store 术语与内存 seed 合并查询 → `term add` 后立即参与管线 |
+| **配置** | `cache.l2_path`(默认 `data/engine.db`,相对仓库根;`data/` 入 .gitignore) |
+
+### 验收三项全绿(TDD:先写测试见红,再实现转绿)
+1. ✅ 同句二次翻译 `cache_hit=true` 且假 LLM 计数=0(跨进程:L2 命中)
+2. ✅ 杀进程模拟(关闭连接后重开库)RUNNING job → INTERRUPTED → 重排队可重试
+3. ✅ **204 passed**(+36:23 store DAO + 10 集成 + 6 CLI,全部 tmp 临时库不落用户目录)
+
+### 过程中踩掉的坑(已记入记忆)
+- 持非重入 `threading.Lock` 内调 `job_get` → **死锁挂 300s**;改 `_job_get_locked` 无锁变体
+- §8.3 `translation_jobs` 无 `updated_at` 列(工程书逐字 schema)— recover 写它报 `no such column`
+- WAL sidecar(`engine.db-wal/-shm`)不匹配 `*.db` gitignore → 需 `data/` 目录级忽略
+
+下一张待做工单:**ticket-007**(优先级队列 + 后台 worker,blocked by 004 已 done),可立即开工。
+[2026-09-08 16:26:18] ✅ Round completed successfully

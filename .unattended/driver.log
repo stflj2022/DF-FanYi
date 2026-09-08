@@ -216,3 +216,30 @@ ticket-007 完成 ✅
 [2026-09-08 16:51:28] === ROUND 6 ===
 [2026-09-08 16:51:28] Provider: pi-primary
 [2026-09-08 16:51:28] Starting AI agent...
+## ticket-008 完成 ✅
+
+**提交**: `3172a4e` 已推送 · **pytest 279 passed**(+42)· 工单已翻 done 并归档 `.unattended/tasks/done/`
+
+### 交付物
+
+| 文件 | 说明 |
+|---|---|
+| `dfhack/scripts/fanyi.lua` | 游戏侧桥 v1: eventful 公告捕获 + gamelog 增量回溯 + 非阻塞 TCP 客户端 + Safe Mode 版本守卫 + `fanyi status/start/stop/overlays/clear/debug` 命令。**已安装进 `~/Games/DwarfFortress/hack/scripts/`** |
+| `df_fanyi/bridge/{protocol,server}.py` | 引擎侧 JSON-RPC 服务器(tcp/unix 双传输、结果缓冲、调度器集成) |
+| `tests/lua/*` + `test_bridge_lua.py` | **真实 fanyi.lua 无头回放**(模拟 DFHack 环境，7 场景： 守卫/离线静默/闭环渲染/confidence 门控/断线重连/gamelog/CJK 门控) |
+| `scripts/install-dfhack.sh` / `dfhack-load-report.sh` | 幂等安装器 + 真机探针(实测跑通： 装载→引擎起→health 应答→清理) |
+| `docs/audits/DFHACK_INTEGRATION.md` | 捕获/渲染/守卫/传输定论(含 luasocket 仅 TCP 的文档+源码证据) |
+
+### 关键定论与坑
+
+- **工单偏差**: 原文“unix socket 客户端”不可行 — DFHack 捆绑 luasocket **仅 TCP** → 定论 loopback TCP `127.0.0.1:17486`(仅绑回环，审计 §5 有证据)
+- **真 bug 被测试抓出**： Lua `#S.sent` 对哈希表恒 0 → fetch_done 心跳永不发、引擎宕机检测不出 → 改显式 `inflight` 计数
+- **DFHack 脚本每次命令重执行** → 加载路径不能重置运行态(否则 `status` 把桥停掉)
+- 提交时 `git add -A` 卷进了并行 driver 的 WIP(router_client 等)→ 已 un-stage 留给 driver,自己的调试残留已删
+
+### 剩余
+- **ticket-009** 游戏内端到端(含 CJK 字体贴图生成)
+- **ticket-010** MVP 验收
+
+无人值守 driver 会话仍在跑，将接手 ticket-009。
+[2026-09-08 18:06:34] ✅ Round completed successfully

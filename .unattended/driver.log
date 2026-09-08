@@ -139,3 +139,8 @@ ticket-002 完成 ✅
 
 **收尾**：ticket-004 状态 → done，归档至 `.unattended/tasks/done/`；两个逻辑提交（工单 + driver 工具），工作树干净（0 遗留）。当前 4/10 工单完成，下一张可做：ticket-005（pending，无 blocked）。
 [2026-09-08 15:24:04] ✅ Round completed successfully
+[2026-09-08 15:24:17] ✅ Pushed to GitHub
+[2026-09-08 15:24:17] Round complete, waiting 30s...
+[2026-09-08 15:24:47] === ROUND 2 ===
+[2026-09-08 15:24:47] Provider: pi-primary
+[2026-09-08 15:24:47] Starting AI agent...

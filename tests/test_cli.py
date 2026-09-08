@@ -117,10 +117,14 @@ def test_ollama_down_logs_fallback(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     log = REPO / "logs" / "engine.log"
-    before = log.stat().st_size if log.exists() else 0
+    # 不用 st_size 切片对比: 本机其它进程(驱动/看门狗/进度报告/平行开发)可能并发
+    # 追加 engine.log, 字节偏移会被插入的内容推向错误位置(偶发误报)。
+    # 改为断言本次运行新增了一条回退记录(计数增加), 同样精确且抗并发。
+    before = log.read_text(encoding="utf-8").count("回退原文") if log.exists() else 0
     p = _run(
         "translate", "--config", str(cfg_path), stdin="Stray dog has given birth to puppies.\n"
     )
     assert p.returncode == 0, p.stderr
-    after = log.read_text(encoding="utf-8")[before:]
-    assert "回退原文" in after or "fallback" in after.lower(), "日志未记录 fallback"
+    after = log.read_text(encoding="utf-8").count("回退原文")
+    assert after > before, "本次运行未新增 回退原文 日志记录"
+    assert "fallback" in log.read_text(encoding="utf-8").lower(), "日志未记录 fallback"

@@ -243,3 +243,29 @@ ticket-007 完成 ✅
 
 无人值守 driver 会话仍在跑，将接手 ticket-009。
 [2026-09-08 18:06:34] ✅ Round completed successfully
+[2026-09-08 18:06:46] ✅ Pushed to GitHub
+[2026-09-08 18:06:46] Round complete, waiting 30s...
+[2026-09-08 18:07:16] === ROUND 7 ===
+[2026-09-08 18:07:16] Provider: pi-primary
+[2026-09-08 18:07:16] Starting AI agent...
+**ticket-009（游戏端到端）完成** — commit `e0c2cc7`，pytest **292 passed (+13)**，已推送 GitHub。
+
+## 交付内容
+
+**CJK 字形贴图（不改字库，全官方 API）**
+- `scripts/generate_font_atlas.py` → `dfhack/data/fanyi-font/`：3877 字形（ASCII+CJK 标点+GB2312 一级，8x12/格），白字黑影 + 对比度增强（否则黑底下呈灰字），附 SIL OFL 许可随图集分发
+- `fanyi.lua`：字体装载（`dfhack.textures.loadTileset`）+ 自实现 UTF-8 解码 + `fanyi.subtitle` overlay 底部字幕条（仅渲染回调内贴图，门控/图集双闸）+ `fanyi overlays on|off [cjk]`（缺图集拒绝并静默原文）
+
+**测试**
+- 无头 9 场景（+3）：`cjk_render_tiles` 逐字贴图 x/y/texpos 全断言、`cjk_missing_glyph` 缺字形跳格、`overlays_cmd` 门控链
+- `tests/test_e2e_loop.py`（+6）：真 socket BridgeServer —— 词典快路径零 LLM、长句 queued 占位→`fetch_done` 轮询、LLM 挂→词典兜底+failed 静默、引擎重启恢复、离线降级、**Lua 线上格式逐字段镜像**（双事件同文 FIFO 映射）
+- 降级链三条全自动化验证 ✅
+
+**文档/安装**
+- `DFHACK_INTEGRATION.md` §9 定论；`docs/audits/E2E_CHECKLIST.md`：自动化轮次 A1-A5 已过，**游戏内人工轮次 B1-B6 待你执行**（装载守卫/引擎停原文/中文上屏/ollama 停兜底/断网/图集负路径）
+- `install-dfhack.sh` 已把 fanyi.lua + 图集装进 `~/Games/DwarfFortress`（幂等已验证）
+
+**踩坑记录**（已写日志）：harness defclass 的 `__index` 回调必须 rawget（否则自引用爆栈）；再次踩 `#哈希表` 坑；比例化假 LLM 对短句被 §24 长度比校验正确拒绝。
+
+下一轮 driver 将接手 **ticket-010（MVP 验收 Test 1-8 + 阈值初调）**，其依赖 009 已满足。
+[2026-09-08 18:40:05] ✅ Round completed successfully

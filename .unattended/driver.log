@@ -8,3 +8,25 @@
 [2026-09-08 13:44:12] === ROUND 1 ===
 [2026-09-08 13:44:12] Provider: pi-primary
 [2026-09-08 13:44:12] Starting AI agent...
+✅ **ticket-001 完成并提交 (b5d25a9)，14 项测试全绿**
+
+## 工单执行摘要
+
+**选定工单**: ticket-001（编号最小、无阻塞；其余工单均被它阻塞）
+
+**产出 1 — `docs/audits/ENVIRONMENT_AUDIT.md`**（全部实测）：
+- **DF 53.16** classic 构建 + **DFHack 53.16-r1.1** 版本匹配（无需 Safe Mode）；classic 支持结论有四重证据（g_src 目录、classic 启动器、dfhooks 机制、stderr.log 实跑记录）
+- **修正了 FACTS 文件的 ⚠️1**：审计期间游戏被人工启动，我抓住窗口实测 —— RPC 随 DFHack 自启监听 `127.0.0.1:5000`（`ss` + `./dfhack-run plug` 成功返回插件表），游戏退出后才连接拒绝。**无需手动 enable**
+- 补查了 FACTS 另两项：`data/save` 为空（无存档污染风险）；worldgen 支持 CLI 自动化（ticket-009 前置 ✅）
+
+**产出 2 — 固化 ollama 调用**（`providers/ollama_client.py` + 真实录制回放测试）：
+- 唯一路径 `/api/chat` + messages + 中文系统提示（消除实测发现的英文注释混入）
+- 实测延迟：**首载 12.06s**（load 8.05s）、**热载单句 3.38-3.72s（满足 <5s）**、**9-10 tok/s**
+- 关键坑记录：`keep_alive` 5 分钟自动卸载 → worker 必须保活（转工单-007）
+
+**TDD 流程**：先写 14 个测试（7 验收 + 7 客户端回放）→ 红实施 → 绿。工程书禁止事项全程核查：无 API Key、无 OCR、无云端默认、无 k8s/PG/向量库。
+
+**流程完整性**：状态行 `done` ✅ → 复制到 `.unattended/tasks/done/` ✅ → `pytest tests/ -q` 14 passed ✅ → `git add -A && git commit` ✅
+
+⚠️ 一个发现：主会话与无人值守驱动在并行操作本仓库（b3871bb 并行提交、FACTS 文件中途写入），我已把 FACTS 的三个待查项全部补进审计文档并收录入库。下一可做工单：**ticket-002（复用审计，无阻塞）**。
+[2026-09-08 14:00:50] ✅ Round completed successfully

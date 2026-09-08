@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 秘密 —— 永不入库(工程书 §2.4)
+.env
+secrets.env
+*.key
+config/providers.yaml
+
+# 运行时
+*.db
+*.sqlite3
+logs/
+.unattended/.round_mark
+.unattended/STOPPED
+.claude/
+
+# 系统
+.DS_Store

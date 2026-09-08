@@ -1,0 +1,20 @@
+{
+ "recorded_from": "Pi Model Router http://127.0.0.1:8010 router/L2 (glm-5.3-flash), 2026-09-08, ticket-011 试点录制",
+ "request_sentences": [
+  "A small blue-crested bird living in temperate woodlands, known for its harsh chirps.",
+  "It is a large predator.",
+  "blue jay"
+ ],
+ "response": {
+  "model": "glm-5.3-flash",
+  "choices": [
+   {
+    "message": {
+     "role": "assistant",
+     "content": "[\"一种生活在温带林地的小型蓝冠鸟，以其刺耳的鸣叫声而闻名。\", \"它是一种大型捕食者。\", \"冠蓝鸦\"]",
+     "reasoning": "(真实请求含 reasoning 思维链字段, 录制时按约定丢弃, 不入 fixture)"
+    }
+   }
+  ]
+ }
+}

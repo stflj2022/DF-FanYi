@@ -12,10 +12,11 @@ import json
 import logging
 import sys
 import time
+from pathlib import Path
 from typing import Sequence
 
 from df_fanyi import __version__
-from df_fanyi.config import Config, ConfigError, load_config
+from df_fanyi.config import REPO_ROOT, Config, ConfigError, load_config
 from df_fanyi.core.orchestrator import Orchestrator
 from df_fanyi.logging_setup import engine_log_path, setup_logging
 from df_fanyi.pipeline import build_orchestrator
@@ -93,6 +94,37 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument(
         "--once", action="store_true", help="诊断模式: 处理完第一个连接后退出"
     )
+
+    pt = sub.add_parser(
+        "pretranslate",
+        help="云端批量预翻译 vanilla raws(ticket-011): 离线翻译包装入 L2/术语层",
+    )
+    pt.add_argument(
+        "--config",
+        metavar="PATH",
+        help="显式配置文件(全局位置或此处均可)",
+    )
+    pt_sub = pt.add_subparsers(dest="pretranslate_cmd", metavar="子命令", required=True)
+
+    scan_p = pt_sub.add_parser("scan", help="扫描 raws → 统计报告(默认 docs/audits/PRETRANSLATE_SCAN.md)")
+    scan_p.add_argument("--vanilla-dir", help="raws 根目录(覆盖 config pretranslate.vanilla_dir)")
+    scan_p.add_argument("--report", help="报告输出路径(覆盖 config pretranslate.report_path)")
+    scan_p.add_argument("--config", metavar="PATH", help=argparse.SUPPRESS)
+
+    run_p = pt_sub.add_parser("run", help="云端批量翻译(断点续跑, 只补缺; 试点先 --limit 50)")
+    run_p.add_argument("--limit", type=int, help="本轮最多翻译 N 句(缺省=全部剩余)")
+    run_p.add_argument("--vanilla-dir", help="raws 根目录(覆盖 config)")
+    run_p.add_argument("--progress-path", help="进度/翻译包路径(覆盖 config)")
+    run_p.add_argument("--batch-size", type=int, help="每请求打包句数(覆盖 config)")
+    run_p.add_argument("--config", metavar="PATH", help=argparse.SUPPRESS)
+
+    st_p = pt_sub.add_parser("status", help="查看翻译包进度(已译/已弃/模型)")
+    st_p.add_argument("--progress-path", help="进度/翻译包路径(覆盖 config)")
+    st_p.add_argument("--config", metavar="PATH", help=argparse.SUPPRESS)
+
+    in_p = pt_sub.add_parser("install", help="翻译包装入 L2 TM + 锁定名称术语(幂等)")
+    in_p.add_argument("--progress-path", help="进度/翻译包路径(覆盖 config)")
+    in_p.add_argument("--config", metavar="PATH", help=argparse.SUPPRESS)
     return parser
 
 
@@ -107,6 +139,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_term(args)
         if args.command == "bridge":
             return _cmd_bridge(args)
+        if args.command == "pretranslate":
+            return _cmd_pretranslate(args)
     except ConfigError as exc:
         print(f"配置错误: {exc}", file=sys.stderr)
         return 2
@@ -273,3 +307,136 @@ def _cmd_bridge(args: argparse.Namespace) -> int:
         server.stop()
         scheduler.shutdown()
     return 0
+
+
+def _resolve_repo_path(raw: str | Path) -> Path:
+    """相对路径解析到仓库根(与 cache.l2_path 同规则)。"""
+    path = Path(raw).expanduser()
+    return path if path.is_absolute() else REPO_ROOT / path
+
+
+def _resolve_vanilla_dir(pt_cfg: dict, override: str | None) -> Path:
+    """raws 根目录: CLI 覆盖 > config > 仓库 data/vanilla > DF 安装目录。"""
+    candidates: list[Path] = []
+    if override:
+        candidates.append(Path(override).expanduser())
+    elif pt_cfg.get("vanilla_dir"):
+        candidates.append(_resolve_repo_path(str(pt_cfg["vanilla_dir"])))
+    candidates.append(REPO_ROOT / "data" / "vanilla")
+    candidates.append(Path.home() / "Games" / "DwarfFortress" / "data" / "vanilla")
+    for cand in candidates:
+        if cand.is_dir():
+            return cand
+    joined = ", ".join(str(c) for c in candidates)
+    raise SystemExit(f"找不到 vanilla raws 目录(试过: {joined}); 用 --vanilla-dir 指定")
+
+
+def _scan_subdirs(pt_cfg: dict, root: Path) -> list[str] | None:
+    """扫描子目录列表: config 声明都不存在时回退全量递归(自定义扁平根/测试)。"""
+    from df_fanyi.pretranslate import scanner
+
+    subdirs = pt_cfg.get("subdirs") or scanner.DEFAULT_SUBDIRS
+    if not any((root / str(s)).is_dir() for s in subdirs):
+        return None
+    return [str(s) for s in subdirs]
+
+
+def _cmd_pretranslate(args: argparse.Namespace) -> int:
+    """云端批量预翻译(ticket-011): scan → run(--limit 试点) → install。
+
+    scan: 只读本地 raws, 产出统计报告; run: 批量云端翻译, 进度即离线翻译包,
+    断点续跑(重跑只补缺), router 故障指数退避、重试耗尽停本轮; install:
+    翻译包装入 L2 TM(provider=cloud-pretranslate)+ 名称锁定进术语层。
+    """
+    from df_fanyi.pretranslate import scanner
+    from df_fanyi.pretranslate.batch import BatchTranslator
+    from df_fanyi.pretranslate.install import install_from_progress, load_progress_file
+    from df_fanyi.providers.router_client import RouterChatClient
+
+    cfg = _load_config(args)
+    pt_cfg = cfg.raw.get("pretranslate", {}) or {}
+    cmd = args.pretranslate_cmd
+
+    if cmd == "scan":
+        root = _resolve_vanilla_dir(pt_cfg, getattr(args, "vanilla_dir", None))
+        result = scanner.scan(root, subdirs=_scan_subdirs(pt_cfg, root))
+        report_raw = getattr(args, "report", None) or pt_cfg.get(
+            "report_path", "docs/audits/PRETRANSLATE_SCAN.md"
+        )
+        report = _resolve_repo_path(report_raw)
+        scanner.write_report(result, report, scan_root=str(root))
+        print(
+            f"扫描完成: 文件 {result.files_scanned} | 字段值 {result.total_values} | "
+            f"分句后 {result.total_segments} | 去重后 {result.unique_segments}"
+            f"(名称 {result.name_count}/描述 {result.description_count})"
+        )
+        print(f"报告: {report}")
+        return 0
+
+    progress_raw = (
+        getattr(args, "progress_path", None) or pt_cfg.get(
+            "progress_path", "data/pretranslate_progress.json"
+        )
+    )
+    progress_path = _resolve_repo_path(progress_raw)
+
+    if cmd == "status":
+        client = RouterChatClient(
+            host=str(pt_cfg.get("router_host", RouterChatClient.DEFAULT_HOST)),
+            model=str(pt_cfg.get("router_model", RouterChatClient.DEFAULT_MODEL)),
+        )
+        translator = BatchTranslator(client, progress_path=progress_path)
+        s = translator.status()
+        if not s["exists"]:
+            print(f"未开始(无进度文件: {s['progress_path']}); 先跑 pretranslate run --limit 50")
+            return 0
+        print(
+            f"翻译包: {s['progress_path']}\n"
+            f"模型: {s['model']} ({s['provider']}) | 已译 {s['translated']} | "
+            f"丢弃 {s['dropped']} | 请求 {s['requests']} | 更新于 {s['updated_at']}"
+        )
+        return 0
+
+    if cmd == "run":
+        root = _resolve_vanilla_dir(pt_cfg, getattr(args, "vanilla_dir", None))
+        scan_result = scanner.scan(root, subdirs=_scan_subdirs(pt_cfg, root))
+        client = RouterChatClient(
+            host=str(pt_cfg.get("router_host", RouterChatClient.DEFAULT_HOST)),
+            model=str(pt_cfg.get("router_model", RouterChatClient.DEFAULT_MODEL)),
+            timeout=float(pt_cfg.get("router_timeout_s", RouterChatClient.DEFAULT_TIMEOUT)),
+        )
+        translator = BatchTranslator(
+            client,
+            progress_path=progress_path,
+            batch_size=int(
+                getattr(args, "batch_size", None) or pt_cfg.get("batch_size", 12)
+            ),
+            request_interval_s=float(pt_cfg.get("request_interval_s", 2.0)),
+            max_retries=int(pt_cfg.get("max_retries", 5)),
+            backoff_initial_s=float(pt_cfg.get("backoff_initial_s", 2.0)),
+            backoff_max_s=float(pt_cfg.get("backoff_max_s", 120.0)),
+            max_tokens=int(pt_cfg.get("router_max_tokens", 4096)),
+            store_source_text=bool(cfg.privacy.get("store_source_text", True)),
+        )
+        print(
+            f"扫描: 去重后 {scan_result.unique_segments} 句; "
+            f"进度已有 {len(translator.load_progress()['translations'])} 句"
+        )
+        stats = translator.run(scan_result.segments, limit=getattr(args, "limit", None))
+        print(stats.summary())
+        if not stats.ok:
+            print("本轮中止(router 持续不可用/输出不齐); 进度已保存, 稍后重跑自动续传", file=sys.stderr)
+            return 1
+        return 0
+
+    if cmd == "install":
+        progress = load_progress_file(progress_path)
+        from df_fanyi.database.store import store_from_config
+
+        with store_from_config(cfg) as store:
+            stats = install_from_progress(progress, store)
+        print(f"已安装 {progress_path}: {stats.summary()}")
+        return 0
+
+    print(f"未知 pretranslate 子命令: {cmd}", file=sys.stderr)
+    return 2

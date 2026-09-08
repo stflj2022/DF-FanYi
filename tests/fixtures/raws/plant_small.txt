@@ -1,0 +1,5 @@
+[OBJECT:PLANT]
+
+[PLANT:WHEAT]
+	[NAME:single-grain wheat][NAME_PLURAL:single-grain wheat][ADJ:single-grain wheat]
+	[PREFSTRING:beer]

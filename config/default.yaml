@@ -51,6 +51,31 @@ providers:               # 工程书 §12/§17: OpenAI-compatible = base_url + a
 privacy:                 # 工程书 §46
   store_source_text: true  # false 时日志/库只存 hash
 
+pretranslate:            # ticket-011: 云端批量预翻译 vanilla raws(离线翻译包)
+  vanilla_dir: ""        # raws 根目录; 空=自动探测(仓库 data/vanilla → ~/Games/DwarfFortress/data/vanilla)
+  subdirs:               # 扫描范围: 叙事内容目录(languages 字典词/text 模板文本不扫)
+    - vanilla_creatures
+    - vanilla_creatures_extinct
+    - vanilla_items
+    - vanilla_plants
+    - vanilla_materials
+    - vanilla_descriptors
+    - vanilla_entities
+    - vanilla_buildings
+    - vanilla_interactions
+    - vanilla_environment
+  progress_path: data/pretranslate_progress.json  # 进度=离线翻译包(断点续跑)
+  report_path: docs/audits/PRETRANSLATE_SCAN.md   # scan 报告
+  batch_size: 12          # 每请求打包句数(10-20, 工单约定)
+  request_interval_s: 2.0 # 请求间隔 ≥2s(节流, 绝不轰炸 router)
+  max_retries: 5          # 单批重试上限(503/额度耗尽/输出不齐)
+  backoff_initial_s: 2.0  # 指数退避初值
+  backoff_max_s: 120.0    # 退避上限
+  router_max_tokens: 4096 # 批量输出+可能思维链的 token 预算(2048 会被 thinking 吃空)
+  router_host: http://127.0.0.1:8010  # Pi Model Router(§12, 不直连上游)
+  router_model: router/L2             # 云端优先(ADR-cloud-first-translation)
+  router_timeout_s: 120
+
 bridge:                   # 工程书 §21-22/§43-44: 游戏↔引擎 JSON-RPC 桥(ticket-008)
   enabled: true           # 引擎启动时是否随之启动桥监听
   transport: tcp          # tcp=loopback(游戏侧 DFHack luasocket 官方仅 TCP); unix=主机侧工具/测试

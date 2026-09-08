@@ -1,0 +1,5 @@
+[OBJECT:ITEM]
+
+[ITEM_WEAPON:ITEM_WEAPON_SWORD_SHORT]
+	[NAME:short sword:short swords]
+	[DESCRIPTION:A short blade. It is cheap.]

@@ -1,0 +1,16 @@
+[OBJECT:CREATURE]
+
+[CREATURE:BIRD_BLUEJAY]
+	[DESCRIPTION:A small blue-crested bird living in temperate woodlands, known for its harsh chirps.]
+	[NAME:blue jay:blue jays:blue jay]
+	[CASTE_NAME:blue jay:blue jays:blue jay]
+	[GENERAL_CHILD_NAME:blue jay hatchling:blue jay hatchlings]
+	[CREATURE_TILE:249][COLOR:1:0:1]
+	[PREFSTRING:coloration]
+	[APPLY_CREATURE_VARIATION:STANDARD_FLYING_GAITS:900:471:314:157:1900:2900] 56 kph, need to work on base speed for flying
+	[BIOME:GRASSLAND_TEMPERATE]
+
+[CREATURE:BIRD_RAVEN]
+	[DESCRIPTION:A small blue-crested bird living in temperate woodlands, known for its harsh chirps.]
+	[NAME:raven:ravens]
+	[DESCRIPTION:It is a large predator. It hunts at night! Can it fly?]

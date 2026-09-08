@@ -48,3 +48,14 @@ def load_system_prompt(version: str = "v1") -> str:
     if path.exists():
         return path.read_text(encoding="utf-8").strip()
     return _EMBEDDED_V1.strip()
+
+
+def load_prompt(stem: str, fallback: str = "") -> str:
+    """通用版本化提示词加载: prompts/{stem}.txt, 缺失时用 fallback。
+
+    ticket-011: pretranslate_batch_v1 等附属提示词与主系统提示词同源同规(§19)。
+    """
+    path = PROMPTS_DIR / f"{stem}.txt"
+    if path.exists():
+        return path.read_text(encoding="utf-8").strip()
+    return fallback.strip()

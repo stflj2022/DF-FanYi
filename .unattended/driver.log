@@ -307,3 +307,20 @@ gemma-4b-trans 每次翻译前有 **~500 token thinking 阶段**（ollama 归入
 [2026-09-08 19:26:11] === ROUND 9 ===
 [2026-09-08 19:26:11] Provider: pi-primary
 [2026-09-08 19:26:12] Starting AI agent...
+## 本轮完成：ticket-011(云端批量预翻译)— 全部工单 001-011 done
+
+**交付** (commit `d24a1b5`,已推送)：
+- `df_fanyi/pretranslate/`:scanner(引擎同款 hash,运行时精确命中)→ batch(断点续跑 + 指数退避 + §24 逐句验证)→ install(L2 TM + 名称 locked 进术语层，幂等)
+- CLI:`df-fanyi pretranslate scan|run --limit N|status|install` + config 节
+- 测试：scanner 19 + batch 20 + install 7 + CLI 6,**全套件 362 passed / 1 skipped**
+
+**验收**：
+- ✅ 真实扫描报告：88 文件 / 12388 字段值 / 去重后 **6964 句**(名称 5705 / 描述 1259)
+- ✅ 真实云端试点 `--limit 50`:**50/50** 通过，验证丢弃 0,p50=23s(router/L2 → glm-5.3-flash);2 次空 content 被指数退避兜住(批量 max_tokens 2048→4096 防思维链吃空)
+- ✅ 引擎实测零 LLM:`Soap Maker's Workshop → 制皂工坊` cache_hit=true provider=cloud-pretranslate;断点续跑重跑只补缺 ✓
+- ✅ 文档:`docs/audits/PRETRANSLATE_SCAN.md`(扫描+试点统计)、`PRETRANSLATE_GUIDE.md`(操作手册)
+
+**后台运行中**：全量 6964 句预翻译已启动(nohup,≈581 请求 ≈3.7h),进行到 126 句、验证器正确拦截 1 条不合格译文。中断后重跑同一命令自动续传，完成后 `pretranslate install` 即全量生效。
+
+**工单状态**：001-011 全部 done —— 下轮驱动将走“无可做工单 → 进度总结 + 代码质量改进”分支。
+[2026-09-08 19:57:39] ✅ Round completed successfully

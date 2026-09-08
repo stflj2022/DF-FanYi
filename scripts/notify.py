@@ -22,8 +22,8 @@ def main():
             iface.CloseNotification(dbus.UInt32(int(old)))
     except Exception:
         pass
-    # timeout=0 → 不自动消失, 手动关闭
-    nid = iface.Notify(app, dbus.UInt32(0), "", summary, body, [], {}, dbus.Int32(0))
+    # timeout=-1 → 永不自动过期, 手动点击关闭(规范: 0=由服务器决定, -1=永驻)
+    nid = iface.Notify(app, dbus.UInt32(0), "", summary, body, [], {}, dbus.Int32(-1))
     os.makedirs(os.path.dirname(STATE), exist_ok=True)
     open(STATE, "w").write(str(nid))
     print("notif_id=%s" % nid)

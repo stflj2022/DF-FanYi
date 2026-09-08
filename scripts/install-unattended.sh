@@ -102,6 +102,31 @@ systemctl --user daemon-reload
 systemctl --user enable --now dffanyi-watchdog.timer
 log_info "systemd timer watchdog 已安装(每10分钟)"
 
+# 4.5 进度通知 timer(每30分钟桌面通知,幂等)
+cat > ~/.config/systemd/user/dffanyi-progress-report.service << EOF
+[Unit]
+Description=DF-FanYi progress report notification
+
+[Service]
+Type=oneshot
+ExecStart=$REPO/scripts/progress-report.sh
+EOF
+cat > ~/.config/systemd/user/dffanyi-progress-report.timer << 'EOF'
+[Unit]
+Description=DF-FanYi progress report timer (every 30 min)
+
+[Timer]
+OnBootSec=30min
+OnUnitActiveSec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+systemctl --user daemon-reload
+systemctl --user enable --now dffanyi-progress-report.timer
+log_info "进度通知 timer 已安装(每30分钟)"
+
 # 5. 启动 driver(tmux,幂等)
 tmux kill-session -t "$SESSION" 2>/dev/null || true
 tmux new-session -d -s "$SESSION" "cd $REPO && bash driver.sh >> $REPO/.unattended/driver.stdout 2>&1"
@@ -114,3 +139,4 @@ fi
 log_info "观察: tail -f $REPO/.unattended/driver.log"
 log_info "完工判据: bash $REPO/scripts/completion-check.sh && echo 已完工"
 log_info "看门狗: systemctl --user status dffanyi-watchdog.timer"
+log_info "进度通知: systemctl --user status dffanyi-progress-report.timer"

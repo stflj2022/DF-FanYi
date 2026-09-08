@@ -109,3 +109,18 @@ ticket-002 完成 ✅
 
 **下一轮可做**: ticket-004（核心管线,Blocked by 001+003 现已全部 done）。
 [2026-09-08 14:56:06] ✅ Round completed successfully
+[2026-09-08 14:56:21] ✅ Pushed to GitHub
+[2026-09-08 14:56:21] Round complete, waiting 30s...
+[2026-09-08 14:56:51] === ROUND 3 ===
+[2026-09-08 14:56:51] Provider: pi-primary
+[2026-09-08 14:56:51] Starting AI agent...
+[2026-09-08 14:59:14] === UNATTENDED DRIVER STARTED v1.2.0 ===
+[2026-09-08 14:59:14] Project: DF-FanYi
+[2026-09-08 14:59:14] Providers: 1 configured
+[2026-09-08 14:59:14] Test command: python3 -m pytest tests/ -q
+[2026-09-08 14:59:14] Mode: (LIVE)
+[2026-09-08 14:59:14] Platform: Linux
+[2026-09-08 14:59:14] Timeout: 7200 s | Zero-output fuse: 900 s
+[2026-09-08 14:59:14] === ROUND 1 ===
+[2026-09-08 14:59:14] Provider: pi-primary
+[2026-09-08 14:59:14] Starting AI agent...

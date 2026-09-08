@@ -7,6 +7,7 @@ mkdir -p "$LOGF"
 touch "$LOGF/STOPPED"
 tmux kill-session -t dffanyi-driver 2>/dev/null
 systemctl --user disable --now dffanyi-watchdog.timer 2>/dev/null
+systemctl --user disable --now dffanyi-progress-report.timer 2>/dev/null
 echo "[$(date '+%F %T')] shutdown: $REASON" >> "$LOGF/watchdog.log"
 # 一次性终报
 DONE=$(grep -l "^## 状态: done" "$REPO"/docs/tickets/ticket-*.md 2>/dev/null | wc -l)

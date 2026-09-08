@@ -188,3 +188,26 @@ ticket-002 完成 ✅
 [2026-09-08 16:26:57] === ROUND 5 ===
 [2026-09-08 16:26:57] Provider: pi-primary
 [2026-09-08 16:26:57] Starting AI agent...
+ticket-007 完成 ✅
+
+**交付** (commit `f81e8f6`, 已 push, origin 0 ahead):
+
+| 模块 | 内容 |
+|---|---|
+| `core/queue/priority.py` | Priority P0-P4 枚举、TranslationJob(id/priority/text_hash/attempt/deadline_ms §25)、线程安全 heapq 队列 —— max_size 满员拒绝不阻塞、close 后 pop 不死锁(§30) |
+| `core/queue/heuristic.py` | `complexity_score`(长度+变量/标记惩罚−模板补偿, 0-1 归一), 阈值 0.25=规则档上界(§34) |
+| `core/queue/worker.py` | LocalTranslationWorker: 重试≤3 后 FAILED+on_failed; §29 realtime 超 deadline → was_demoted 降 BACKGROUND 仍交付结果; 云端 worker 同契约预留 |
+| `core/queue/scheduler.py` | submit: 复杂度≤阈值走同步快路径(缓存/词典/规则,**零 LLM**), 否则入队异步立即返回原文占位; subscribe_done/failed 事件回调(DFHack 桥接入点); 队列满→同步回退; §42 任务行 + §46 隐私不落原文 |
+| orchestrator/store/config | 提取公开 `fast_translate()`; `job_enqueue(job_id=)`; queue.async_threshold/max_queue + build_scheduler |
+
+**验收三项全绿**:
+1. Test 6 — 长句提交立即返回原文占位, 后台完成回调携带中文 ✓
+2. P0 恒先于 P3 被处理(假 LLM 调用顺序断言) ✓
+3. LLM 持续失败 → 3 次重试后 FAILED, 队列不死锁(修好后新任务正常完成) ✓
+
+**测试**: +33(priority 7 / heuristic 7 / fast_translate 6 / scheduler 9 / 50 句混合集成 1 / store 3), 全套 **237 passed**。
+
+**已收尾**: 工单状态置 done、复件复制到 `.unattended/tasks/done/`、`git add -A && git commit && git push`、日常日志已记录坑(autostart 惰性启动失效、L1 缓存去重干扰计数、短句假译文需按信息长度成比例).
+
+下一张: ticket-008(DFHack Lua 桥)。
+[2026-09-08 16:50:49] ✅ Round completed successfully

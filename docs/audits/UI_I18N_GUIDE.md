@@ -55,6 +55,20 @@
 2. 崩溃(官方声明测试版可能崩): 回滚两件套即可, 不影响存档结构; 另有 `.backup-before-dfint-*/`。
 3. 游戏升级后失效: 先看日志; offsets 是模式搜索一般自适应, 真失效需更新 df-translations/源码重跑脚本。
 
+## 画面美化:HEWN 图形包(2026-09-08 已装)
+
+经典免费版只有 ASCII 字符画(原版 art 目录仅 curses 字形集, png 数=0)。旧一代 Phoebus/DFgraphics
+已停更(最高支持 47.05), **v53 经典版现役方案是 HEWN**(DFFD id=17744, 目标 53.10, 经典版实测可用):
+
+- 已装: `data/mods/HEWN`(模组本体 6.5MB) + `data/init/colors.txt` 配色 + `data/art/black_background.bmp`
+  + `hack/data/art/`(DFHack 界面贴图), 备份在 `.backup-before-hewn-*/`
+- **激活方式(经典版特有)**: 经典免费版**没有主菜单 Mods 入口**(付费版才有, interfaces.csv 有
+  "Mods→模组"词条可证); 经典版在**创建新世界流程中**出现模组勾选步骤, 勾 HEWN → 生成世界。
+  已存在的世界无法追加模组。也可在标题屏跑 DFHack `gui/mod-manager`。
+- 装后建议把 设置→`Use Classic ASCII Glyphs` 设为 No, 否则强制回字符画
+- 回滚: 删 `data/mods/HEWN` + 还原备份里的 colors.txt/black_background.bmp/hack-data-art
+- 53.11~53.16 新增的少量对象暂无专属贴图, 会自动回退为字符, 属预期行为
+
 ## 已知限制
 
 - 词库覆盖有限: 未收录文本保持英文(官方词库持续扩充, 重跑 `install-ui-i18n.sh` 即更新词典)。

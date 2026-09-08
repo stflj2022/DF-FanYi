@@ -165,14 +165,13 @@ tests_pass() {
     (cd "$REPO" && timeout 600 $TEST_COMMAND >/dev/null 2>&1)
 }
 
-# Check if all tasks done (based on actual task dirs, not a hardcoded count)
+# Check if all tasks done (based on docs/tickets status lines, not task dirs)
 all_done() {
     local done total
-    done=$(ls "$TASKS_DIR/done/" 2>/dev/null | wc -l)
-    total=$(( $(ls "$TASKS_DIR"/todo/ 2>/dev/null | wc -l) \
-            + $(ls "$TASKS_DIR"/doing/ 2>/dev/null | wc -l) \
-            + done ))
-    [ "$total" -gt 0 ] && [ "$done" -ge "$total" ]
+    total=$(ls "$REPO/docs/tickets"/ticket-*.md 2>/dev/null | wc -l)
+    [ "$total" -eq 0 ] && return 1
+    done=$(grep -l "^## 状态: done" "$REPO/docs/tickets"/ticket-*.md 2>/dev/null | wc -l)
+    [ "$done" -ge "$total" ]
 }
 
 # Get current round output

@@ -37,6 +37,33 @@ sed -e "s|{{PROJECT_NAME}}|DF-FanYi|g" \
 chmod +x "$REPO/driver.sh"
 bash -n "$REPO/driver.sh" || { log_error "driver.sh 语法错误"; exit 1; }
 
+# 3.5 完工判定修正: 模板的 all_done() 基于 tasks/ 目录(工单在 docs/tickets 时
+#     会误判“无待办=全完成”)。补丁为基于工单状态行判定。
+python3 - "$REPO/driver.sh" << 'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = '''all_done() {
+    local done total
+    done=$(ls "$TASKS_DIR/done/" 2>/dev/null | wc -l)
+    total=$(( $(ls "$TASKS_DIR"/todo/ 2>/dev/null | wc -l) \\
+            + $(ls "$TASKS_DIR"/doing/ 2>/dev/null | wc -l) \\
+            + done ))
+    [ "$total" -gt 0 ] && [ "$done" -ge "$total" ]
+}'''
+new = '''all_done() {
+    local done total
+    total=$(ls "$REPO/docs/tickets"/ticket-*.md 2>/dev/null | wc -l)
+    [ "$total" -eq 0 ] && return 1
+    done=$(grep -l "^## 状态: done" "$REPO/docs/tickets"/ticket-*.md 2>/dev/null | wc -l)
+    [ "$done" -ge "$total" ]
+}'''
+assert old in s, "all_done 原文未匹配,停止"
+open(p, 'w').write(s.replace(old, new))
+print("✓ all_done 已补丁为基于工单状态行")
+PYEOF
+bash -n "$REPO/driver.sh" || { log_error "补丁后 driver.sh 语法错误"; exit 1; }
+
 # 3. config.json(driver 运行时读取,覆盖模板默认值)
 cat > "$REPO/.unattended/config.json" << EOF
 {

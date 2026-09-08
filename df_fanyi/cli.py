@@ -11,6 +11,7 @@ import argparse
 import json
 import logging
 import sys
+import time
 from typing import Sequence
 
 from df_fanyi import __version__
@@ -79,6 +80,19 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="显式配置文件(全局位置或此处均可)",
     )
+
+    b = sub.add_parser("bridge", help="启动游戏↔引擎 JSON-RPC 桥(ticket-008, 工程书 §21-22)")
+    b.add_argument(
+        "--config",
+        metavar="PATH",
+        help="显式配置文件(全局位置或此处均可)",
+    )
+    b.add_argument("--transport", choices=["tcp", "unix"], help="传输(默认取配置 bridge.transport)")
+    b.add_argument("--port", type=int, help="tcp 端口(默认取配置 bridge.port)")
+    b.add_argument("--socket-path", help="unix 套接字路径(默认取配置 bridge.socket_path)")
+    b.add_argument(
+        "--once", action="store_true", help="诊断模式: 处理完第一个连接后退出"
+    )
     return parser
 
 
@@ -91,6 +105,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_selftest(args)
         if args.command == "term":
             return _cmd_term(args)
+        if args.command == "bridge":
+            return _cmd_bridge(args)
     except ConfigError as exc:
         print(f"配置错误: {exc}", file=sys.stderr)
         return 2
@@ -206,3 +222,54 @@ def _cmd_term(args: argparse.Namespace) -> int:
             return 0
     print(f"未知 term 子命令: {args.term_cmd}", file=sys.stderr)
     return 2
+
+
+def _cmd_bridge(args: argparse.Namespace) -> int:
+    """启动桥服务(§21-22, ticket-008): JSON-RPC over loopback TCP / unix。
+
+    游戏侧 DFHack Lua(fanyi.lua)通过 loopback TCP 接入; --once 供诊断/测试:
+    处理完第一个连接即优雅退出(engine 下线时游戏侧静默回退原文 §2.3)。
+    """
+    from df_fanyi.bridge.server import BridgeServer
+    from df_fanyi.pipeline import build_scheduler
+
+    cfg = _load_config(args)
+    bridge_cfg = cfg.bridge
+    transport = args.transport or str(bridge_cfg.get("transport", "tcp"))
+    port = args.port if args.port is not None else int(bridge_cfg.get("port", 17486))
+    socket_path = args.socket_path or str(bridge_cfg.get("socket_path", "data/engine.sock"))
+    version = str(bridge_cfg.get("version", "0.1.0"))
+
+    scheduler = build_scheduler(cfg)
+    server = BridgeServer(
+        scheduler,
+        transport=transport,
+        host=str(bridge_cfg.get("host", "127.0.0.1")),
+        port=port,
+        socket_path=socket_path,
+        version=version,
+        results_capacity=int(bridge_cfg.get("results_capacity", 1024)),
+        results_ttl_s=float(bridge_cfg.get("results_ttl_s", 300.0)),
+    )
+    server.start()
+    endpoint = (
+        f"127.0.0.1:{server.bound_port}" if transport == "tcp" else socket_path
+    )
+    print(f"桥已启动: {transport} {endpoint} (protocol={server._protocol_version})", flush=True)
+    try:
+        if args.once:
+            # 诊断模式: 等第一个连接被完整处理(其服务线程退出)后优雅停止
+            while server._running:
+                threads = [t for t in server._conn_threads if t.is_alive()]
+                if server._conn_threads and not threads:
+                    break
+                time.sleep(0.05)
+        else:
+            while True:
+                time.sleep(3600)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.stop()
+        scheduler.shutdown()
+    return 0

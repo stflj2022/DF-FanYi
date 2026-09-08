@@ -37,6 +37,7 @@ def test_cli_help_lists_subcommands() -> None:
     assert p.returncode == 0, p.stderr
     assert "translate" in p.stdout
     assert "selftest" in p.stdout
+    assert "bridge" in p.stdout  # ticket-008: 游戏↔引擎桥子命令
 
 
 def test_translate_dwarf_returns_dictionary_hit() -> None:
@@ -206,3 +207,11 @@ def test_term_add_affects_translation(tmp_path: Path) -> None:
     assert data["text"] == "哥布林"
     assert data["model"] == "dictionary"
     assert data["confidence"] == 1.0
+
+
+def test_cli_bridge_help_lists_options() -> None:
+    """ticket-008: bridge 子命令参数齐全(transport/port/socket-path/once)。"""
+    p = _run("bridge", "--help")
+    assert p.returncode == 0, p.stderr
+    for flag in ("--transport", "--port", "--socket-path", "--once", "--config"):
+        assert flag in p.stdout

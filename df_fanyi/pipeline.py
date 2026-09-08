@@ -52,6 +52,8 @@ def build_scheduler(cfg: Config) -> "TranslationScheduler":
     - privacy.store_source_text=false 时不落原文(§46)。
     云端 worker 为第三阶段(接口在 queue.worker 模块预留)。
     """
+    from df_fanyi.core.queue import TranslationScheduler  # 惰性导入(避免包循环)
+
     store = store_from_config(cfg)
     orch = build_orchestrator(cfg, store=store)
     queue_cfg = cfg.queue

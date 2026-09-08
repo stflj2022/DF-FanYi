@@ -306,3 +306,40 @@ def test_literal_placeholder_collision_in_pipeline() -> None:
     r = Orchestrator(llm=rec).translate("VAR_001 is safe and {COUNT} dwarves.")
     assert rec.calls == ["VAR_001 is safe and VAR_002 dwarves."]
     assert r.text == "VAR_001 is safe and {COUNT} 名矮人。"
+
+
+# --- 桥集成: build_scheduler(ticket-007 回归: 曾缺 TranslationScheduler 导入) ---
+
+
+def _minimal_cfg(tmp_path: Path):
+    from df_fanyi.config import Config, ProviderConfig
+
+    cfg = Config(
+        raw={},
+        config_path=tmp_path / "config.yaml",
+        cache={"l1_size": 64},
+        context={},
+        queue={"async_threshold": 0.25, "max_attempts": 1},
+        local_llm={"workers": 1, "max_queue": 8},
+        providers=[
+            ProviderConfig(name="ollama", base_url="http://127.0.0.1:1", model="x", api_key_env="")
+        ],
+        logging={},
+        privacy={"store_source_text": True},
+        bridge={"transport": "tcp", "port": 0},
+    )
+    return cfg
+
+
+def test_build_scheduler_submits_sync_dict_hit(tmp_path: Path) -> None:
+    """build_scheduler 装配可用调度器: Dwarf 词典命中 → 同步快路径(零 LLM/网络)。"""
+    from df_fanyi.pipeline import build_scheduler
+
+    scheduler = build_scheduler(_minimal_cfg(tmp_path))
+    try:
+        sub = scheduler.submit("Dwarf")
+        assert sub.is_async is False
+        assert sub.result.text == "矮人"
+        assert sub.result.model == "dictionary"
+    finally:
+        scheduler.shutdown()

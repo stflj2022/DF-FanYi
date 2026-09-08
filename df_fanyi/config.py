@@ -91,6 +91,7 @@ class Config:
     providers: list[ProviderConfig]
     logging: dict[str, Any]
     privacy: dict[str, Any]
+    bridge: dict[str, Any]
 
     @classmethod
     def from_mapping(cls, mapping: dict[str, Any], config_path: Path) -> "Config":
@@ -105,6 +106,7 @@ class Config:
             providers=providers,
             logging=dict(mapping.get("logging", {})),
             privacy=dict(mapping.get("privacy", {})),
+            bridge=dict(mapping.get("bridge", {})),
         )
         cfg._validate()
         return cfg
@@ -126,6 +128,15 @@ class Config:
         for p in self.providers:
             if not p.name or not p.base_url or not p.model:
                 raise ConfigError(f"provider 缺少 name/base_url/model: {p}")
+        # §21 桥配置校验(ticket-008)
+        transport = self.bridge.get("transport")
+        if transport is not None and transport not in {"tcp", "unix"}:
+            raise ConfigError(f"bridge.transport 非法: {transport}(支持 tcp/unix)")
+        port = self.bridge.get("port")
+        if port is not None and (
+            not isinstance(port, int) or isinstance(port, bool) or not 0 <= port <= 65535
+        ):
+            raise ConfigError(f"bridge.port 非法: {port}(0-65535, 0=随机)")
 
 
 def _resolve_provider(item: Any, source: Path) -> ProviderConfig:

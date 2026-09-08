@@ -41,3 +41,13 @@ providers:               # 工程书 §12/§17: OpenAI-compatible = base_url + a
 
 privacy:                 # 工程书 §46
   store_source_text: true  # false 时日志/库只存 hash
+
+bridge:                   # 工程书 §21-22/§43-44: 游戏↔引擎 JSON-RPC 桥(ticket-008)
+  enabled: true           # 引擎启动时是否随之启动桥监听
+  transport: tcp          # tcp=loopback(游戏侧 DFHack luasocket 官方仅 TCP); unix=主机侧工具/测试
+  host: 127.0.0.1         # tcp 监听地址(只回环, 不暴露到局域网)
+  port: 17486             # tcp 监听端口(0=随机, 测试用)
+  socket_path: data/engine.sock  # unix 传输的套接字路径
+  results_capacity: 1024  # 已完译文缓冲上限(游戏侧轮询取回前暂存)
+  results_ttl_s: 300      # 缓冲记录 TTL(秒), 超时淘汰防泄漏
+  version: 0.1.0          # 引擎桥侧版本号(health/version 上报)

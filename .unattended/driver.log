@@ -30,3 +30,8 @@
 
 ⚠️ 一个发现：主会话与无人值守驱动在并行操作本仓库（b3871bb 并行提交、FACTS 文件中途写入），我已把 FACTS 的三个待查项全部补进审计文档并收录入库。下一可做工单：**ticket-002（复用审计，无阻塞）**。
 [2026-09-08 14:00:50] ✅ Round completed successfully
+[2026-09-08 14:01:01] ✅ Pushed to GitHub
+[2026-09-08 14:01:01] Round complete, waiting 30s...
+[2026-09-08 14:01:31] === ROUND 2 ===
+[2026-09-08 14:01:31] Provider: pi-primary
+[2026-09-08 14:01:32] ✅ 🎉 ALL TASKS COMPLETED AND TESTS PASS → auto-shutdown

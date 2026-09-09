@@ -32,7 +32,8 @@ Dwarf Fortress → DFHack → 文本捕获 → 解析/分段 → 上下文管理
 
 ## 本机环境
 
-- DF + DFHack: `~/Games/DwarfFortress`(版本审计见 docs/audits/)
+- 游戏本体: **Steam 版**(对接指南见 [docs/audits/STEAM_MIGRATION_GUIDE.md](docs/audits/STEAM_MIGRATION_GUIDE.md);
+  经典版 2026-09-09 已退役, 历史记录见 docs/audits/UI_I18N_GUIDE.md)
 - 本地模型: ollama `gemma-4b-trans`(5.3G, CPU ~9 tok/s)
 - 云端: OpenRouter / 智谱 / 国家超算(经 Pi Model Router,第三阶段接入)
 - 平台: Omarchy (Arch) / Ryzen 7 4800U / 16G RAM / AMD Vega

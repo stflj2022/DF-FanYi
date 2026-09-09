@@ -116,6 +116,11 @@ local function fnv1a(s)
 end
 
 local function push_event(event)
+    -- 去重: 同一 event_id 可能同时被 eventful.onReport 和容器轮询捕到
+    for _, ev in ipairs(S.pending) do
+        if ev.event_id == event.event_id then return end
+    end
+    if S.sent[event.event_id] ~= nil then return end
     table.insert(S.pending, event)
     S.stats.captured = S.stats.captured + 1
     if #S.pending > 512 then table.remove(S.pending, 1) end
@@ -154,6 +159,49 @@ local function ensure_capture()
             end
             EV.enableEvent(EV.eventType.REPORT, 1)
             S.eventful_hooked = true
+        end
+    end
+end
+
+-- 53.06 双容器轮询捕获(reports + announcements) --------------------------------
+-- 实测: v53.06 的欢迎/公告走 world.status.announcements, eventful.onReport 只盯
+-- world.status.reports(且 report 短命, 过期即清), 导致捕获=0。改为每 N tick
+-- 直接 diff 两个容器的新增 id, 不依赖 eventful 事件机制。
+S.seen_container_ids = S.seen_container_ids or {}
+
+local function capture_from_containers()
+    if not (df and df.global and df.global.world) then return end
+    local ok, st = pcall(function() return df.global.world.status end)
+    if not ok or not st then return end
+    for _, listname in ipairs({'reports', 'announcements'}) do
+        local ok2, list = pcall(function() return st[listname] end)
+        if ok2 and list then
+            for i = 0, #list - 1 do
+                local rep = list[i]
+                if rep and rep.id and rep.text and #rep.text > 0
+                   and not S.seen_container_ids[rep.id] then
+                    S.seen_container_ids[rep.id] = true
+                    -- 有界: 条目太多时丢弃最老的(防长期游玩爆内存)
+                    local keys = {}
+                    for k in pairs(S.seen_container_ids) do keys[#keys + 1] = k end
+                    if #keys > 2048 then
+                        for j = 1, #keys - 1024 do S.seen_container_ids[keys[j]] = nil end
+                    end
+                    push_event({
+                        event_id = 'report-' .. rep.id,
+                        timestamp = now_ms(),
+                        screen = 'announcement',
+                        source_text = dfhack.df2console(rep.text),
+                        text_type = 'ANNOUNCEMENT',
+                        priority = 80,
+                        context_id = 'report-' .. rep.id,
+                        markup = {},
+                        variables = {},
+                        source_hash = fnv1a(rep.text),
+                        game_version = dfhack.getDFVersion(),
+                    })
+                end
+            end
         end
     end
 end
@@ -525,6 +573,9 @@ local function tick()
     end
 
     -- gamelog 回溯(低频)
+    if S.tick % 10 == 0 then
+        pcall(capture_from_containers)
+    end
     if S.tick % 30 == 0 then
         pcall(tail_gamelog)
     end

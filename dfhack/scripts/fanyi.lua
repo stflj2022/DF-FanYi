@@ -471,7 +471,10 @@ OVERLAY_WIDGETS = {subtitle = FanyiSubtitle}
 
 local function rpc_request(method, params)
     local req = {jsonrpc='2.0', id=method .. '-' .. now_ms(), method=method, params=params or {}}
-    return JSON.encode(req)
+    -- DFHack 捆绑 json 库 encode 输出多行缩进 JSON(逐行 send 会被引擎 json.loads
+    -- 拆行报 -32700 parse error); 压缩成单行(只去换行+行首缩进, 值内空格保留)。
+    local encoded = JSON.encode(req)
+    return (encoded:gsub('\n[ \t]*', ''))
 end
 
 local function tick()

@@ -52,7 +52,7 @@ privacy:                 # 工程书 §46
   store_source_text: true  # false 时日志/库只存 hash
 
 pretranslate:            # ticket-011: 云端批量预翻译 vanilla raws(离线翻译包)
-  vanilla_dir: ""        # raws 根目录; 空=自动探测(仓库 data/vanilla → ~/Games/DwarfFortress/data/vanilla)
+  vanilla_dir: "/home/wu/Games/DF-v5306/Dwarf Fortress/data/vanilla"  # Steam 版 v53.06 整合包本体(纯 ASCII 路径, 2026-09-09 从经典版迁移)
   subdirs:               # 扫描范围: 叙事内容目录(languages 字典词/text 模板文本不扫)
     - vanilla_creatures
     - vanilla_creatures_extinct

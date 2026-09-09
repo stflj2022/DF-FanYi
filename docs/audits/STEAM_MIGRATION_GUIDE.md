@@ -97,6 +97,41 @@ python3 -m df_fanyi pretranslate install
 
 ---
 
+## 2026-09-09 百度整合包实测记录(本机现状 `~/Games/DF-v5306`)
+
+> 未等 Steam 购买, 先用百度网盘 Steam 版整合包(v53.06, Goldberg 模拟器 + dfint 预装)
+> 验证了三个关键事实, 供正式迁移时对照。
+
+### 1. dfint-lite 已在新版上正常工作(偏移匹配成功)
+- 包内 `dfhooks_dfint_cjk.dll` + `dfint-data/`(lite-20251127, windows-steam 平台)经
+  Proton 运行被正确加载; `dfint-data/dfint-log.log` 显示偏移模式匹配成功
+  (`enabler.textures: 840, gps.screenx: 132` 等), 主菜单/加载串经 legacy 词典命中。
+- **结论**: v53.06 二进制不需要重新计算 offsets.txt, 静态名/描述词典(`dictionaries/`)
+  社区数据已全覆盖本版 725 生物 + 225 植物(raw ID 差集 = 0, 空译文 = 0)。
+- “翻译不完全”的真实来源 = 动态/公告文本不落在任何静态词典里(与经典版同因),
+  见第 3 条。
+
+### 2. legacy 词典补写 = 立刻见效的整合动作(已完成于本机)
+- dfint-lite 的 `addst` 钩子对每个屏幕字符串查 `legacy-dictionary.csv`(string 级回退表),
+  因此把引擎云端 TM 里的**完整句子**(生物描述等, ≥20 字且含空格)补进去,
+  游戏内描述/工具提示可直接命中中文。
+- 执行(引擎仓库内, 幂等, 只填空缺不覆盖):
+  ```bash
+  python3 -m df_fanyi pretranslate install   # 先保证 engine.db TM 最新
+  python3 scripts/export-dfint-dict.py --legacy            # 预览
+  python3 scripts/export-dfint-dict.py --legacy --write    # 备份后追加
+  # 2026-09-09 结果: 21844 → 23643 条(+1798), 备份 legacy-dictionary.csv.bak-*
+  ```
+- 注意: 短词/专名刻意不补(会污染回退表); 名字层本就由 `dictionaries/*.csv` 覆盖。
+
+### 3. 引擎公告桥在本整合包上**还挂不上**(无 DFHack)
+- 包内只有 dfhooks 链 + dfint 插件, **没有 hack/ 与 DFHack**, `fanyi.lua` 无处可挂;
+  公告/事件动态文本暂时只能靠 legacy 词表和部分命中。
+- 正式解法不变: 购买 Steam 版 + 工坊 DFHack(阶段 1), 或手动下载 Steam 版 DFHack
+  tar 包解入游戏根。引擎侧架构无需改动, 桥对接点就是 `hack/scripts/fanyi.lua`。
+
+---
+
 ## 常见坑(前车之鉴)
 
 | 坑 | 对策 |

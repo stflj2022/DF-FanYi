@@ -124,11 +124,20 @@ python3 -m df_fanyi pretranslate install
   ```
 - 注意: 短词/专名刻意不补(会污染回退表); 名字层本就由 `dictionaries/*.csv` 覆盖。
 
-### 3. 引擎公告桥在本整合包上**还挂不上**(无 DFHack)
-- 包内只有 dfhooks 链 + dfint 插件, **没有 hack/ 与 DFHack**, `fanyi.lua` 无处可挂;
-  公告/事件动态文本暂时只能靠 legacy 词表和部分命中。
-- 正式解法不变: 购买 Steam 版 + 工坊 DFHack(阶段 1), 或手动下载 Steam 版 DFHack
-  tar 包解入游戏根。引擎侧架构无需改动, 桥对接点就是 `hack/scripts/fanyi.lua`。
+### 3. 引擎公告桥在本整合包上**已完成手动挂载**(2026-09-09 实测成功)
+- 整合包原只有 dfhooks 链 + dfint 插件, 手动安装 DFHack 53.06-r1 后桥成功对接:
+  ```bash
+  # ① 下载 DFHack 53.06-r1 Windows-64bit zip(GitHub releases)
+  # ② 全部内容复制进游戏根(hack/ 与 data/ 并列, 官方安装法)
+  # ③ 复制引擎对接文件:
+  cp dfhack/scripts/fanyi.lua  <游戏根>/hack/scripts/
+  cp -r dfhack/data/fanyi-font  <游戏根>/hack/data/
+  # ④ 版本守卫: fanyi.lua 用 CD.f/C.dfhack 锁定 53.06/53.06-r1
+  ```
+- **实测结果**: `dfhack-run.exe "fanyi" "status"` 返回 `引擎: 在线 (loopback 127.0.0.1:17486)`, 状态 running;
+  CJK 贴图就绪 3877 字形(tile 8x12); dfint 汉化与 DFHack 共存无损(dfhooks chainloader 自动加载双插件)。
+- **版本守卫教训**: `dfhack.getDFVersion()` 返回形如 `v0.53.06 win64 STEAM` 的**带前缀完整串**,
+  fanyi.lua 原用 `==` 精确比对永远不会通过 → 已改 `find(C.df, 1, true)` 包容匹配。
 
 ---
 

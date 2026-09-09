@@ -44,8 +44,8 @@ local S = fanyi_state
 S.config = S.config or {
     host = '127.0.0.1',
     port = 17486,           -- 与引擎 config bridge.port 对齐
-    df = '53.16',           -- 守卫: 锁定的 DF 版本
-    dfhack = '53.16-r1',    -- 守卫: 锁定的 DFHack 版本前缀
+    df = '53.06',           -- 守卫: 锁定的 DF 版本(整合包 v53.06)
+    dfhack = '53.06-r1',    -- 守卫: 锁定的 DFHack 版本前缀
     tick_frames = 12,       -- 主轮询节拍(~0.2s@60fps)
     retry_frames = 90,      -- 重连起始间隔(帧), 指数退避 ×2 至 900
     max_send_per_tick = 3,  -- 每节拍最多发送的待发事件数
@@ -81,7 +81,8 @@ S.gamelog = S.gamelog or {enabled=true, path=nil}
 function fanyi_check_version()
     local dfver = dfhack.getDFVersion and dfhack.getDFVersion() or '?'
     local dhver = dfhack.getDFHackVersion and dfhack.getDFHackVersion() or '?'
-    local df_ok = dfver == C.df
+    -- getDFVersion() 返回形如 "v0.53.06 win64 STEAM"(含前缀/平台), 用包容匹配
+    local df_ok = dfver:find(C.df, 1, true) ~= nil
     local dh_ok = dhver:sub(1, #C.dfhack) == C.dfhack
     if not (df_ok and dh_ok) then
         S.safe_mode = true

@@ -23,18 +23,37 @@ def build_orchestrator(cfg: Config, *, store: "SQLiteStore | None" = None) -> Or
 
     store 可注入(与调度器共享同一 SQLite 连接, 避免多连接写争用);
     未给时按 config 打开 L2 持久层。
+
+    LLM 选择(2026-09-09 修复): 优先 Router(云端, router_host/router_model),
+    失败回退本地 ollama。此前硬编码 ollama → 实时翻译永远走本地 gemma,
+    超时即回退原文(玩家看到中英混杂)。现在与 pretranslate 同源。
     """
-    llm_cfg = cfg.local_llm
-    host = str(llm_cfg.get("base_url", OllamaChatClient.DEFAULT_HOST))
-    model = str(llm_cfg.get("model", OllamaChatClient.DEFAULT_MODEL))
-    timeout = float(llm_cfg.get("timeout_s", 120.0))
-    client = OllamaChatClient(host=host, model=model, timeout=timeout)
+    pt_cfg = cfg.raw.get("pretranslate", {})  # pretranslate 仅在 raw 字典(Config 未 typed)
+    if pt_cfg.get("router_host"):
+        from df_fanyi.providers.router_client import RouterChatClient
+        from df_fanyi.providers.router_translator import RouterTranslator
+
+        host = str(pt_cfg.get("router_host"))
+        model = str(pt_cfg.get("router_model", RouterChatClient.DEFAULT_MODEL))
+        timeout = float(pt_cfg.get("router_timeout_s", RouterChatClient.DEFAULT_TIMEOUT))
+        primary: "GemmaTranslator | RouterTranslator" = RouterTranslator(
+            host=host, model=model, timeout=timeout
+        )
+        primary_provider = "router"
+    else:
+        llm_cfg = cfg.local_llm
+        host = str(llm_cfg.get("base_url", OllamaChatClient.DEFAULT_HOST))
+        model = str(llm_cfg.get("model", OllamaChatClient.DEFAULT_MODEL))
+        timeout = float(llm_cfg.get("timeout_s", 120.0))
+        primary = GemmaTranslator(host=host, model=model, timeout=timeout)
+        primary_provider = "ollama"
+
     if store is None:
         store = store_from_config(cfg)  # ticket-006: L2 SQLite 持久层
     orch = Orchestrator(
-        llm=GemmaTranslator(client, model=model),
+        llm=_FallingBackLLM(primary, primary_provider, cfg=cfg),
         model_name=model,
-        provider="ollama",
+        provider=primary_provider,
         cache_capacity=int(cfg.cache.get("l1_size", 512)),
         store=store,
     )
@@ -68,3 +87,45 @@ def build_scheduler(cfg: Config) -> "TranslationScheduler":
         store=store,
         store_source_text=bool(cfg.privacy.get("store_source_text", True)),
     )
+
+
+def _FallingBackLLM(primary, primary_provider, cfg=None):
+    """复合 LLM: 优先 primary(router/云端), 失败回退本地 ollama。
+
+    Orchestrator 只接一个 LLM 可调用对象; 云端失败(RouterError/超时/额度)
+    不应让整条翻译静默回退原文——降到本地 ollama 再试一次, 成功则给译文。
+    """
+    from df_fanyi.local.gemma import GemmaTranslator
+    from df_fanyi.providers.ollama_client import OllamaChatClient
+    from df_fanyi.providers.router_client import RouterError
+
+    # 懒加载配置(循环导入防护): 只用一次, 构建兜底客户端
+    if cfg is None:
+        from df_fanyi.config import load_config
+
+        cfg = load_config()
+    llm_cfg = cfg.local_llm
+    backup_host = str(llm_cfg.get("base_url", OllamaChatClient.DEFAULT_HOST))
+    backup_model = str(llm_cfg.get("model", OllamaChatClient.DEFAULT_MODEL))
+    backup_timeout = float(llm_cfg.get("timeout_s", 120.0))
+
+    class _Fallback:
+        model = primary.model
+
+        def __init__(self):
+            self._primary = primary
+            self._backup = None
+            self._provider = primary_provider
+
+        def __call__(self, text: str) -> str:
+            try:
+                return self._primary(text)
+            except (RouterError, OSError, TimeoutError):
+                # 云端不可用 → 本地 ollama 兜底(冷启动慢, 但比回退原文强)
+                if self._backup is None:
+                    self._backup = GemmaTranslator(
+                        host=backup_host, model=backup_model, timeout=backup_timeout
+                    )
+                return self._backup(text)
+
+    return _Fallback()

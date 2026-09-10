@@ -33,6 +33,8 @@ queue:                   # 工程书 §25-30: 优先级队列与调度(ticket-00
   max_queue: 32                # §27 本地 LLM max_queue(满员拒绝新任务不阻塞)
 
 local_llm:               # 工程书 §27/§14: 本地 gemma E4B
+  enabled: false         # 2026-09-10 用户指令: 不再用本地模型翻译, 全部走云端 router;
+                         # pipeline._FallingBackLLM 据此不构建 ollama 兕底, 云端失败直接回退原文
   workers: 1             # 本地并发恒 1(CPU 单实例)
   max_queue: 32          # §27: 等待队列上限(ticket-007 起生效)
   model: gemma-4b-trans
@@ -42,11 +44,11 @@ local_llm:               # 工程书 §27/§14: 本地 gemma E4B
   timeout_s: 120
 
 providers:               # 工程书 §12/§17: OpenAI-compatible = base_url + api_key_env + model
-  - name: ollama         # 第一版唯一启用: 本地模型(无 key)
+  - name: ollama         # 2026-09-10 起停用: 实时翻译全部走云端 router(见 pretranslate.router_host)
     base_url: http://127.0.0.1:11434
     api_key_env: ""      # 本地模型无 key; 云端填环境变量名(见 providers.example.yaml)
     model: gemma-4b-trans
-    enabled: true
+    enabled: false
 
 privacy:                 # 工程书 §46
   store_source_text: true  # false 时日志/库只存 hash

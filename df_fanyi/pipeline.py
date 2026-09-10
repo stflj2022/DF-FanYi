@@ -24,9 +24,10 @@ def build_orchestrator(cfg: Config, *, store: "SQLiteStore | None" = None) -> Or
     store 可注入(与调度器共享同一 SQLite 连接, 避免多连接写争用);
     未给时按 config 打开 L2 持久层。
 
-    LLM 选择(2026-09-09 修复): 优先 Router(云端, router_host/router_model),
-    失败回退本地 ollama。此前硬编码 ollama → 实时翻译永远走本地 gemma,
-    超时即回退原文(玩家看到中英混杂)。现在与 pretranslate 同源。
+    LLM 选择(2026-09-10 更新): 全部走云端 Router(router_host/router_model),
+    本地 ollama 兕底已按用户指令移除(local_llm.enabled=false)。此前硬编码
+    ollama → 实时翻译永远走本地 gemma, 超时即回退原文(玩家看到中英混杂,
+    见 15:59 欢迎公告 FAILED job)。现在与 pretranslate 同源。
     """
     pt_cfg = cfg.raw.get("pretranslate", {})  # pretranslate 仅在 raw 字典(Config 未 typed)
     if pt_cfg.get("router_host"):
@@ -90,10 +91,12 @@ def build_scheduler(cfg: Config) -> "TranslationScheduler":
 
 
 def _FallingBackLLM(primary, primary_provider, cfg=None):
-    """复合 LLM: 优先 primary(router/云端), 失败回退本地 ollama。
+    """复合 LLM: 优先 primary(router/云端)。
 
-    Orchestrator 只接一个 LLM 可调用对象; 云端失败(RouterError/超时/额度)
-    不应让整条翻译静默回退原文——降到本地 ollama 再试一次, 成功则给译文。
+    2026-09-10 起(用户指令): 本地 ollama 兜底已移除, 全部走云端。
+    local_llm.enabled=false(默认配置即 false)时云端失败直接回退原文,
+    不再降级本地 gemma——本地模型 p50≈58s 且不可达曾导致欢迎公告翻译
+    FAILED(15:59 job), 玩家看到中英混杂。
     """
     from df_fanyi.local.gemma import GemmaTranslator
     from df_fanyi.providers.ollama_client import OllamaChatClient
@@ -105,6 +108,9 @@ def _FallingBackLLM(primary, primary_provider, cfg=None):
 
         cfg = load_config()
     llm_cfg = cfg.local_llm
+    if not bool(llm_cfg.get("enabled", False)):
+        # 纯云端模式: 不构建本地兜底, 云端失败由 Orchestrator 回退原文
+        return primary
     backup_host = str(llm_cfg.get("base_url", OllamaChatClient.DEFAULT_HOST))
     backup_model = str(llm_cfg.get("model", OllamaChatClient.DEFAULT_MODEL))
     backup_timeout = float(llm_cfg.get("timeout_s", 120.0))
@@ -121,7 +127,7 @@ def _FallingBackLLM(primary, primary_provider, cfg=None):
             try:
                 return self._primary(text)
             except (RouterError, OSError, TimeoutError):
-                # 云端不可用 → 本地 ollama 兜底(冷启动慢, 但比回退原文强)
+                # 云端不可用 → 本地 ollama 兜底(仅在 local_llm.enabled=true 时存在此路径)
                 if self._backup is None:
                     self._backup = GemmaTranslator(
                         host=backup_host, model=backup_model, timeout=backup_timeout

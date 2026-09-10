@@ -617,8 +617,8 @@ function fanyi_paint_subtitle(dc, max_cols, max_rows)
     if not (S.overlays_on and S.render_cjk and S.font.installed) then return 0 end
     local payload = fanyi_render_payload(max_rows)
     if #payload == 0 then return 0 end
-    max_cols = max_cols or 60
-    max_rows = max_rows or 8
+    max_cols = max_cols or 42
+    max_rows = max_rows or 5
     local base_row = max_rows - #payload  -- 底部对齐
     local painted = 0
     for ri, line in ipairs(payload) do
@@ -636,15 +636,20 @@ function fanyi_paint_subtitle(dc, max_cols, max_rows)
     return painted
 end
 
--- overlay 字幕条小部件(官方 overlay 插件): 底部右侧, 8 行×60 列。
+-- overlay 字幕条小部件(官方 overlay 插件)。
+-- 位置教训(2026-09-10): 默认右下 {x=-2,y=-2} 60x8 正好压住 embark 准备界面
+-- 的出发按钮(用户实锤被挡) → 改左下偏上左边缘, 且缩到 42x5(21 汉字/行)。
+-- widget 不拦鼠标(focusable=false 默认), 遮挡仅限有字形的格子;
+-- 用户可用 `overlay reposition fanyi.subtitle` 自由拖位(持久化 overlay.json,
+-- 自调位置优先于 default_pos)。
 -- 渲染只在 onRenderBody 回调内发生(§29: 不占主循环); 门控关闭时不画任何像素。
 FanyiSubtitle = defclass(FanyiSubtitle, overlay.OverlayWidget)
 FanyiSubtitle.ATTRS = FanyiSubtitle.ATTRS or {}
-FanyiSubtitle.ATTRS.desc = 'DF-FanYi 中文译文悬浮(底部字幕条, fanyi overlays on cjk)'
-FanyiSubtitle.ATTRS.default_pos = {x = -2, y = -2}
+FanyiSubtitle.ATTRS.desc = 'DF-FanYi 中文译文悬浮(字幕条, fanyi overlays on cjk)'
+FanyiSubtitle.ATTRS.default_pos = {x = 0, y = -6}
 FanyiSubtitle.ATTRS.default_enabled = false
 FanyiSubtitle.ATTRS.viewscreens = 'all'
-FanyiSubtitle.ATTRS.frame = {w = 60, h = 8}
+FanyiSubtitle.ATTRS.frame = {w = 42, h = 5}
 
 function FanyiSubtitle:onRenderBody(dc)
     fanyi_paint_subtitle(dc, self.frame.w, self.frame.h)

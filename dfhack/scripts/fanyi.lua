@@ -1,5 +1,8 @@
 -- DF-FanYi 游戏侧桥(ticket-008): 捕获游戏文本 → loopback TCP → 翻译引擎(JSON-RPC)。
 -- 安装在 hack/scripts/fanyi.lua 后, `fanyi` 成为 DFHack 命令(脚本自注册)。
+--@ module = true
+-- (module 标记必须: overlay.rescan 只扫描 module scripts 的 OVERLAY_WIDGETS,
+--  无此标记则 fanyi.subtitle 永远 "widget not found" — 2026-09-10 stderr 实锤)
 --
 -- 职责(工程书 §21-22/§43-44):
 --   1. 捕获: 公告(report, eventful.onReport)+ 游戏日志回溯(History, 新行去重);
@@ -77,6 +80,7 @@ S.last_error = S.last_error or ''
 S.gamelog = S.gamelog or {enabled=true, path=nil}
 S.seen_tv_hashes = S.seen_tv_hashes or {}  -- textviewer 弹窗内容去重(哈希)
 S.debug_log = S.debug_log or {path = nil}  -- 轻量文件日志(游戏目录 fanyi-debug.log)
+S.last_vs_fingerprint = S.last_vs_fingerprint or ''  -- viewscreen 链类名指纹(变化时落盘)
 
 -- 版本守卫 §43-44 -----------------------------------------------------------
 
@@ -230,7 +234,20 @@ end
 local function capture_textviewer()
     local ok, vs = pcall(dfhack.gui.getCurViewscreen)
     if not ok or not vs then return end
+    -- 探测: viewscreen 链类名指纹变化时落盘(定位弹窗真实类名, 无控制台排障)
+    local names = {}
     local cur = vs
+    while cur do
+        local oks, s = pcall(tostring, cur)
+        names[#names + 1] = (oks and s:match('<([^:]+):') or (oks and s or '?'))
+        cur = cur.parent
+    end
+    local fp = table.concat(names, '<')
+    if fp ~= S.last_vs_fingerprint then
+        S.last_vs_fingerprint = fp
+        flog('viewscreen链: ' .. fp)
+    end
+    cur = vs
     while cur do
         local okc, is_tv = pcall(function()
             return df.viewscreen_textviewerst ~= nil
@@ -797,10 +814,12 @@ function fanyi_command(args)
                 end
                 S.render_cjk = true
                 -- 官方路径启用小部件: overlay enable fanyi.subtitle(持久化 overlay.json)
+                -- rescan 只扫 module scripts(fanyi.lua 已带 @ module = true)
                 if overlay.rescan then pcall(overlay.rescan) end
                 if dfhack.run_command then
                     pcall(dfhack.run_command, 'overlay', 'enable', 'fanyi.subtitle')
                 end
+                flog('overlays on cjk: 字形=' .. fanyi_count_map(S.font.by_cp))
                 print(('译文悬浮已开启(CJK 贴图就绪: %d 字形, tile %dx%d)')
                     :format(fanyi_count_map(S.font.by_cp), S.font.tile_w, S.font.tile_h))
             else
@@ -808,6 +827,7 @@ function fanyi_command(args)
             end
         elseif sub == 'off' then
             S.overlays_on = false
+            flog('overlays off')
             print('译文悬浮已关闭(游戏显示原文)')
         else
             print('用法: fanyi overlays on|off [cjk]')
@@ -856,6 +876,7 @@ if #args == 0 and dfhack_flags.enable then
 end
 
 fanyi_check_version()
+if dfhack_flags.module then return end  -- require('fanyi') 时只定义不执行(DFHack module 规范)
 if #args > 0 then
     fanyi_command(args)
 elseif not ran_auto then

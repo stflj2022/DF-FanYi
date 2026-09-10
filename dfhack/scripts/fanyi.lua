@@ -75,6 +75,8 @@ S.render_cjk = S.render_cjk or false
 S.font = S.font or {installed = false, tile_w = 8, tile_h = 12, by_cp = {}}
 S.last_error = S.last_error or ''
 S.gamelog = S.gamelog or {enabled=true, path=nil}
+S.seen_tv_hashes = S.seen_tv_hashes or {}  -- textviewer 弹窗内容去重(哈希)
+S.debug_log = S.debug_log or {path = nil}  -- 轻量文件日志(游戏目录 fanyi-debug.log)
 
 -- 版本守卫 §43-44 -----------------------------------------------------------
 
@@ -113,6 +115,21 @@ local function fnv1a(s)
         h = (h ~ b) * 16777619 % 4294967296
     end
     return tostring(h)
+end
+
+-- 轻量文件日志: 游戏侧无 dfhack-run 控制台, 关键事件落盘便于远程排障。
+-- 量级: 仅 start/textviewer捕获/断连, 每会话几十行, 不做轮转。
+local function flog(msg)
+    pcall(function()
+        if not S.debug_log.path then
+            local base = (dfhack.getDFPath and dfhack.getDFPath()) or '.'
+            S.debug_log.path = base .. '/fanyi-debug.log'
+        end
+        local fh = io.open(S.debug_log.path, 'a')
+        if not fh then return end
+        fh:write(os.date('%Y-%m-%d %H:%M:%S '), msg, '\n')
+        fh:close()
+    end)
 end
 
 local function push_event(event)
@@ -206,6 +223,62 @@ local function capture_from_containers()
     end
 end
 
+-- 捕获: textviewer 文本弹窗(欢迎向导/教程/帮助'?'整页文本) ------------------
+-- v53 新 UI 对长段落按单词逐次 top_addst 渲染 → 词典整段键永远不被查询,
+-- 词级匹配只能产出词堆(dfint 日志可见 to/guide/your 逐词命中)。
+-- 动态层接管: 读 viewscreen_textviewerst 完整文本 → 引擎整句翻译 → 字幕条显示。
+local function capture_textviewer()
+    local ok, vs = pcall(dfhack.gui.getCurViewscreen)
+    if not ok or not vs then return end
+    local cur = vs
+    while cur do
+        local okc, is_tv = pcall(function()
+            return df.viewscreen_textviewerst ~= nil
+               and df.viewscreen_textviewerst:is_instance(cur)
+        end)
+        if okc and is_tv then
+            local ok_b, full = pcall(function()
+                local parts = {}
+                local title = tostring(cur.title or '')
+                if #title > 0 then parts[#parts + 1] = title end
+                for i = 0, #cur.text - 1 do
+                    local ln = tostring(cur.text[i] or '')
+                    if #ln > 0 then parts[#parts + 1] = ln end
+                end
+                return table.concat(parts, '\n')
+            end)
+            if ok_b and full and #full >= 10 then
+                local h = fnv1a(full)
+                if not S.seen_tv_hashes[h] then
+                    S.seen_tv_hashes[h] = true
+                    -- 有界: 哈希表膨胀时丢弃一半
+                    local keys = {}
+                    for k in pairs(S.seen_tv_hashes) do keys[#keys + 1] = k end
+                    if #keys > 512 then
+                        for j = 1, #keys - 256 do S.seen_tv_hashes[keys[j]] = nil end
+                    end
+                    flog(('捕获textviewer: %d字符 hash=%s'):format(#full, h:sub(1, 10)))
+                    push_event({
+                        event_id = 'tv-' .. h,       -- 稳定 id: 引擎侧天然幂等
+                        timestamp = now_ms(),
+                        screen = 'textviewer',
+                        source_text = full,
+                        text_type = 'TEXTVIEWER',
+                        priority = 85,               -- 用户正在读的弹窗, 高于公告(80)
+                        context_id = 'textviewer',
+                        markup = {},
+                        variables = {},
+                        source_hash = h,
+                        game_version = dfhack.getDFVersion(),
+                    })
+                end
+            end
+            return  -- 命中一个 textviewer 即止(嵌套罕见)
+        end
+        cur = cur.parent
+    end
+end
+
 -- 捕获: gamelog 历史回溯(History, 新行去重) ----------------------------------
 
 local function tail_gamelog()
@@ -229,8 +302,8 @@ local function tail_gamelog()
     S.log_offset = fh:seek('end')
     fh:close()
     if not chunk or #chunk == 0 then return end
-    for line in chunk:gmatch('[^\r\n]+') do
-        line = dfhack.df2console(line)
+    for raw_line in chunk:gmatch('[^\r\n]+') do
+        local line = dfhack.df2console(raw_line)
         local h = fnv1a(line)
         if #line > 0 and not S.recent_log_hashes then S.recent_log_hashes = {} end
         if S.recent_log_hashes[h] then
@@ -383,14 +456,62 @@ function fanyi_render_lines()
     return table.concat(parts, '\n')
 end
 
--- 渲染载荷(行列表, 底部字幕条数据源; 与贴图/overlay 完全解耦, 可无头断言)
-function fanyi_render_payload(max_rows)
+-- UTF-8 感知换行: 一段文本按字符数拆成 ≤max_cols 的行(优先在空格处断行)
+function fanyi_wrap_line(text, max_cols)
+    local cps = fanyi_utf8_codepoints(text)
+    if #cps <= max_cols then return {text} end
+    local rows = {}
+    local start_i = 1
+    while start_i <= #cps do
+        local end_i = math.min(start_i + max_cols - 1, #cps)
+        if end_i < #cps then
+            -- 窗口内找最后一个空格作断点(至少保留 30% 长度, 防碎行)
+            local space_i = end_i
+            while space_i > start_i + math.floor(max_cols * 0.3) and cps[space_i] ~= 32 do
+                space_i = space_i - 1
+            end
+            if cps[space_i] == 32 then end_i = space_i end
+        end
+        local seg = {}
+        for i = start_i, end_i do seg[#seg + 1] = utf8.char(cps[i]) end
+        rows[#rows + 1] = table.concat(seg)
+        start_i = end_i + 1
+    end
+    return rows
+end
+
+-- 渲染载荷(行列表, 底部字幕条数据源; 与贴图/overlay 完全解耦, 可无头断言)。
+-- 长译文(如 textviewer 整页)先按 '\n' 拆段再按宽度换行; 从最新条目回填,
+-- 装满 max_rows 为止(新内容优先显示)。
+function fanyi_render_payload(max_rows, max_cols)
     if not S.overlays_on then return {} end
     if #S.render_lines == 0 then return {} end
     max_rows = max_rows or 8
+    max_cols = max_cols or 60
+    local groups = {}
+    local used = 0
+    for i = #S.render_lines, 1, -1 do
+        local rows = {}
+        for seg in (S.render_lines[i].text .. '\n'):gmatch('([^\n]*)\n') do
+            if #seg > 0 then
+                for _, r in ipairs(fanyi_wrap_line(seg, max_cols)) do
+                    rows[#rows + 1] = r
+                end
+            end
+        end
+        if used + #rows > max_rows and used > 0 then break end  -- 旧条目放不下
+        if used + #rows > max_rows then                          -- 单条超行: 只留最新
+            while #rows > max_rows do table.remove(rows, 1) end
+        end
+        table.insert(groups, 1, rows)  -- 头插恢复时间正序
+        used = used + #rows
+        if used >= max_rows then break end
+    end
     local out = {}
-    for i = math.max(1, #S.render_lines - max_rows + 1), #S.render_lines do
-        out[#out + 1] = S.render_lines[i]
+    for _, rows in ipairs(groups) do
+        for _, r in ipairs(rows) do
+            out[#out + 1] = {text = r, confidence = 1}
+        end
     end
     return out
 end
@@ -579,6 +700,9 @@ local function tick()
     if S.tick % 30 == 0 then
         pcall(tail_gamelog)
     end
+    if S.tick % 20 == 0 then
+        pcall(capture_textviewer)
+    end
 
     if S.state == 'running' then
         S.timer_euid = dfhack.timeout(C.tick_frames, 'frames', tick)
@@ -619,6 +743,10 @@ function fanyi_status_lines()
         ('  overlay小部件: fanyi.subtitle (%s)'):format(
             overlay.isOverlayEnabled and tostring(overlay.isOverlayEnabled('fanyi.subtitle')) or '?'),
     }
+    local n_tv = 0
+    for _ in pairs(S.seen_tv_hashes) do n_tv = n_tv + 1 end
+    table.insert(lines, ('  文本弹窗捕获: 已见 %d 页 (调试日志: %s)'):format(
+        n_tv, tostring(S.debug_log.path)))
     if S.safe_mode then
         table.insert(lines, '  ⛔ SAFE MODE: ' .. S.safe_reason)
         table.insert(lines, '  (§44: 不做 UI 修改, 仅诊断; 等待兼容版本或更新守卫)')
@@ -645,12 +773,14 @@ function fanyi_command(args)
         S.retry_after = 0
         ensure_capture()
         arm_timer()
-        print('fanyi 捕获已启动(公告+游戏日志); 引擎离线时静默显示原文')
+        flog('fanyi start (捕获: 公告+游戏日志+文本弹窗)')
+        print('fanyi 捕获已启动(公告+游戏日志+文本弹窗); 引擎离线时静默显示原文')
     elseif cmd == 'stop' or cmd == 'disable' then
         if S.state ~= 'running' then print('未运行') return end
         S.state = 'stopped'
         cancel_timer()
         disconnect('user stop')
+        flog('fanyi stop')
         print('fanyi 已停止')
     elseif cmd == 'overlays' then
         local sub = args[2] or ''
@@ -687,6 +817,7 @@ function fanyi_command(args)
         S.displayed = {}
         S.recent_reports = {}
         S.recent_log_hashes = {}
+        S.seen_tv_hashes = {}
         S.sent = {}
         S.inflight = 0
         S.stats.captured = 0
@@ -697,6 +828,9 @@ function fanyi_command(args)
         print('displayed=', #S.render_lines, 'client=', S.client ~= nil, 'euid=', tostring(S.timer_euid))
         print('font: installed=', S.font.installed, 'tile=', S.font.tile_w .. 'x' .. S.font.tile_h,
               'glyphs=', fanyi_count_map(S.font.by_cp))
+        local n_tv = 0
+        for _ in pairs(S.seen_tv_hashes) do n_tv = n_tv + 1 end
+        print('textviewer 去重:', n_tv, 'debuglog=', tostring(S.debug_log.path))
     else
         print([[
 用法:

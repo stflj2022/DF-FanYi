@@ -52,6 +52,7 @@ S.config = S.config or {
     tick_frames = 12,       -- 主轮询节拍(~0.2s@60fps)
     retry_frames = 90,      -- 重连起始间隔(帧), 指数退避 ×2 至 900
     max_send_per_tick = 3,  -- 每节拍最多发送的待发事件数
+    render_ttl_ms = 90000,  -- 字幕条目存活期(ms): 过期清空, 避免"死字幕"常驻
 }
 local C = S.config
 
@@ -72,7 +73,7 @@ S.timer_euid = S.timer_euid or nil
 S.tick = S.tick or 0
 S.stats = S.stats or {captured=0, sent=0, recv=0, done=0, failed=0, reconnect=0}
 S.readbuf = S.readbuf or ''       -- 行拆解缓冲(响应聚合)
-S.render_lines = S.render_lines or {}   -- 准备绘制的 {text, confidence}
+S.render_lines = S.render_lines or {}   -- 准备绘制的 {text, confidence, ts=now_ms}
 S.overlays_on = S.overlays_on or false
 S.render_cjk = S.render_cjk or false
 S.font = S.font or {installed = false, tile_w = 8, tile_h = 12, by_cp = {}}
@@ -431,9 +432,11 @@ local function handle_response(line)
                         event_id = rec.event_id,
                         text = rec.translated_text,
                         confidence = rec.confidence,
+                        ts = now_ms(),
                     }
                     if #S.render_lines > 12 then table.remove(S.render_lines, 1) end
                     S.displayed[rec.event_id] = true
+                    flog('字幕+1 [' .. tostring(rec.event_id) .. '] ' .. (rec.translated_text:sub(1, 60)):gsub('%s+', ' '))
                 end
             elseif rec.status == 'failed' then
                 S.stats.failed = S.stats.failed + 1  -- §2.3: 静默原文
@@ -451,9 +454,11 @@ local function handle_response(line)
                 event_id = result.event_id,
                 text = result.translated_text,
                 confidence = result.confidence,
+                ts = now_ms(),
             }
             if #S.render_lines > 12 then table.remove(S.render_lines, 1) end
             S.displayed[result.event_id] = true
+            flog('字幕+1 [' .. tostring(result.event_id) .. '] ' .. (result.translated_text:sub(1, 60)):gsub('%s+', ' '))
         end
     elseif result.status == 'failed' or (result.error and result.error ~= '') then
         ack_event(result.event_id)
@@ -615,6 +620,13 @@ end
 -- 缺字形跳格(保持与源文同宽对齐); 只在渲染回调内被 overlay 框架调用。
 function fanyi_paint_subtitle(dc, max_cols, max_rows)
     if not (S.overlays_on and S.render_cjk and S.font.installed) then return 0 end
+    -- 字幕自然过期: 长时间无新译文 → 清空(避免"死字幕"常驻遮挡的观感)
+    local now = now_ms()
+    for i = #S.render_lines, 1, -1 do
+        if now - (S.render_lines[i].ts or 0) > C.render_ttl_ms then
+            table.remove(S.render_lines, i)
+        end
+    end
     local payload = fanyi_render_payload(max_rows)
     if #payload == 0 then return 0 end
     max_cols = max_cols or 42
@@ -746,6 +758,22 @@ local function cancel_timer()
     end
 end
 
+-- 每局重置去重集(SC_MAP_LOADED): 游戏对象 ID 与文本哈希都跨局复用, 永久去重
+-- 会把新要塞的到达公告/同名弹窗永远吞掉 → 字幕永远无新内容("死字幕"根因,
+-- 2026-09-10 实锤: 本局 report-1 被上局残留的 seen_container_ids 吞掉)。
+-- TM/引擎 L1 缓存命中秒回, 不会引发 LLM 重译, 重置本身无成本。
+local function fanyi_install_state_hooks()
+    if S.state_hooked then return end
+    S.state_hooked = true
+    dfhack.onStateChange['fanyi-reset-dedup'] = function(sc)
+        if sc ~= SC_MAP_LOADED then return end
+        S.seen_container_ids = {}
+        S.seen_tv_hashes = {}
+        S.displayed = {}
+        flog('新地图已加载: 去重集清空(seen_container/tv/displayed)')
+    end
+end
+
 -- 命令 ----------------------------------------------------------------------
 
 function fanyi_status_lines()
@@ -794,6 +822,7 @@ function fanyi_command(args)
         S.stats.reconnect = 0
         S.retry_after = 0
         ensure_capture()
+        fanyi_install_state_hooks()
         arm_timer()
         flog('fanyi start (捕获: 公告+游戏日志+文本弹窗)')
         print('fanyi 捕获已启动(公告+游戏日志+文本弹窗); 引擎离线时静默显示原文')

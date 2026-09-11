@@ -649,6 +649,7 @@ function fanyi_font_load()
     S.font.tile_h = index.tile_h or 12
     S.font.scale = scale
     S.font.installed = true
+    fanyi_dump_texpos_diag('load')  -- 装载后立即采样真实 texpos
     return true
 end
 
@@ -735,6 +736,11 @@ function fanyi_paint_subtitle(dc, max_cols, max_rows)
             x = x + 2
         end
         return x
+    end
+    -- 周期性 texpos 采样(每 5 秒): 截图/报告乱字时日志已有真实映射数据
+    if not S._diag_last or now_ms() - S._diag_last > 5000 then
+        S._diag_last = now_ms()
+        fanyi_dump_texpos_diag('paint')
     end
     -- 字幕自然过期: 长时间无新译文 → 清空(避免"死字幕"常驻遮挡的观感)
     local now = now_ms()

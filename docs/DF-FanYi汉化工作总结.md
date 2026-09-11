@@ -142,3 +142,39 @@
 
 ---
 *更新于 2026-09-10 · DF-FanYi main = e714ea7(textviewer 捕获) · 待玩家重启游戏验证欢迎弹窗字幕条*
+
+## 九、2026-09-11 根治"中英文混杂"三件套
+
+**用户痛点**：菜单说明/公告/弹窗中英混杂、词沙拉，反复补词典不理想。
+
+**根因三层**（dfint-rust-cjk 源码 `src/translator/mod.rs` 实锤）：
+1. **词沙拉**：v53 新 UI 长段落按单词逐次渲染，词典中 181 条虚词条目
+   (the/of/to/your/and...含空格变体)被逐词命中 → "Prepare 至指引 你的肥硕"词堆。
+   补再多整句键也无用——整段键根本不会被查询。
+2. **整串漏网**：词典没有的串显示英文。静态 exe 抽取（第五/七节）覆盖不了
+   运行时拼接串（人名+模板、raw 生成文本），且此前无收集手段。
+3. **公告面板原文英文**：动态层只写字幕条不改画面（设计如此）。
+
+**修复**：
+| 项 | 内容 |
+|---|---|
+| 词沙拉 | `scripts/prune-dict-function-words.py` 删 181 条虚词；逐条审查后回补 15 条 UI 标签(All/Done/Off/No/Yes/Any/Other/Some/Might+空格变体)，白名单 UI_KEEP 两脚本同步。词典 29510→29344 行 |
+| 漏网收集 | dfint 源码证实 `LOG_LEVEL:Debug` 会记录每条 `missing translation`（未命中串）→ `scripts/collect-untranslated.py` 解析+模拟 dfint 的 `", "` 拆分行为展开 part(模板键，如 "Farmer cancels Give water: Needs empty bucket")→ 过滤 → JSONL → `translate-exe-strings.py` 云端翻译 → `merge-exe-strings.py --write` 合并 → **重启游戏生效** |
+| 词典机制备忘 | simple-dictionary.csv=USER 词典优先于 legacy；匹配=小写化完全匹配；未命中含 ", " 自动拆 part 递归；`(func,bt,string)` 三元组缓存 |
+
+**闭环操作**（玩一局后执行）：
+```bash
+python3 scripts/collect-untranslated.py --rotate     # 收集+归档日志
+python3 scripts/translate-exe-strings.py --in dfint-data/untranslated-*.jsonl \
+                                          --out dfint-data/live-translated-*.jsonl
+python3 scripts/merge-exe-strings.py --in dfint-data/live-translated-*.jsonl --write
+# 重启游戏
+```
+
+**验证清单**（重启游戏后）：
+1. 词沙拉消失：欢迎弹窗/长段落应显示**纯英文段落**（不再中英夹杂词堆）+ 底部字幕条中文
+2. UI 标签完好：过滤菜单 All/Other、确认框 Yes/No、Done/Off 按钮仍中文
+3. Debug 日志在跑：`dfint-data/dfint-log.log` 出现 DEBUG missing translation 行
+
+**遗留**：词典有 1080 个大小写不敏感重复键（HashMap 后写覆盖先写，无害未清）；
+simple-dictionary 有 "path."→空 等尾部清理条目（配合前缀模板设计，勿删）。

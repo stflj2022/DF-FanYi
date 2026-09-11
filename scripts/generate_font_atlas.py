@@ -104,7 +104,8 @@ def _load_font(font_path: str, face_index: int | str, size_px: int):
 
 
 def render_pages(font_path: str, face_index: int | str, pages: list[dict], *,
-                 tile_w: int, tile_h: int, out: Path, scale: int = 1) -> None:
+                 tile_w: int, tile_h: int, out: Path, scale: int = 1,
+                 shrink: float = 1.0) -> None:
     """逐页渲染 RGBA PNG: 白色字形 + 1px 黑影, 居中于格子。
 
     小网格适配: 以 2x 尺寸取字形蒙版, 裁紧 bbox 后等比缩到 (fit_w, fit_h)
@@ -113,11 +114,15 @@ def render_pages(font_path: str, face_index: int | str, pages: list[dict], *,
     scale=2(字幕条大字): 每字占 scale²=4 个连续网格位(行优先 TL,TR,BL,BR),
     字形渲染到 2*tile_w x 2*tile_h —— 汉字 16x24 像素, 可读性大增。
     要求 cols % (2*scale) == 0 保证不跨页行(64 列下每行 16 字, 列恒偶)。
+
+    shrink<1: 字形在格内等比缩小后居中(格子布局/四片切分/贴图逻辑全部不变,
+    只是字形变小留白) —— 字幕条字体“再小 20%”= --shrink 0.8。
     """
     from PIL import Image, ImageFont
 
     span = scale  # 每字边长(格)
-    fit_w, fit_h = tile_w * span - 1, tile_h * span - 1
+    fit_w, fit_h = int((tile_w * span - 1) * shrink), int((tile_h * span - 1) * shrink)
+    fit_w, fit_h = max(4, fit_w), max(4, fit_h)
     size_px = fit_h * 2  # 采样尺寸(再缩放, 抗锯齿更足)
     font = _load_font(font_path, face_index, size_px)
     for page in pages:
@@ -139,25 +144,31 @@ def render_pages(font_path: str, face_index: int | str, pages: list[dict], *,
             glyph = glyph.point(lambda v: min(255, int(v * 1.7) + 20))
             gx = (i * span % page["cols"]) * tile_w
             gy = (i * span // page["cols"]) * tile_h
+            # 格子内居中(shrink<1 时字形留白, 居中视觉更平衡; 四片边界不变)
+            ox = (tile_w * span - nw) // 2
+            oy = (tile_h * span - nh) // 2
             # 黑影(右下 1px)提对比, 白色本体
             shadow = Image.new("RGBA", (nw, nh), (0, 0, 0, 255))
-            img.paste(shadow, (gx + 1, gy + 1), glyph)
+            img.paste(shadow, (gx + ox + 1, gy + oy + 1), glyph)
             solid = Image.new("RGBA", (nw, nh), (255, 255, 255, 255))
-            img.paste(solid, (gx, gy), glyph)
+            img.paste(solid, (gx + ox, gy + oy), glyph)
         img.save(out / page["png"])
-        print(f"  ✓ {page['png']}: {page['count']} 字形")
+        print(f"  ✓ {page['png']}: {page['count']} 字形 (fit {fit_w}x{fit_h})")
 
 
 def emit(font_path: str, face_index: int | str, pages: list[dict], *,
-         out: Path, tile_w: int, tile_h: int, scale: int = 1) -> None:
+         out: Path, tile_w: int, tile_h: int, scale: int = 1,
+         shrink: float = 1.0) -> None:
     """渲染所有页 + 写 index.json(渲染是可跳过的: 已提交产物时测试走 stdlib 校验)。"""
     out.mkdir(parents=True, exist_ok=True)
-    render_pages(font_path, face_index, pages, tile_w=tile_w, tile_h=tile_h, out=out, scale=scale)
+    render_pages(font_path, face_index, pages, tile_w=tile_w, tile_h=tile_h,
+                 out=out, scale=scale, shrink=shrink)
     index = {
         "version": 1,
         "tile_w": tile_w,
         "tile_h": tile_h,
         "scale": scale,
+        "shrink": shrink,
         "pages": pages,
     }
     (out / "index.json").write_text(
@@ -181,6 +192,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--page", default="64x64", help="每页格数(默认 64x64=4096 格)")
     parser.add_argument("--scale", type=int, default=1, choices=(1, 2),
                         help="字形缩放(默认 1; 2=每字占 2x2 格, 字幕条大字模式)")
+    parser.add_argument("--shrink", type=float, default=1.0,
+                        help="字形在格内缩小比例(默认 1.0 填满; 0.8=缩小 20%%)")
     parser.add_argument("--out", default="dfhack/data/fanyi-font", help="输出目录")
     args = parser.parse_args(argv)
 
@@ -198,7 +211,8 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"--page 列数 {cols} 必须被 {2 * args.scale} 整除(防字形跨页行)")
     cps = build_charset(args.charset)
     pages = plan_pages(cps, cols=cols, rows=rows, scale=args.scale)
-    emit(args.font, args.face, pages, out=Path(args.out), tile_w=tile_w, tile_h=tile_h, scale=args.scale)
+    emit(args.font, args.face, pages, out=Path(args.out), tile_w=tile_w, tile_h=tile_h,
+         scale=args.scale, shrink=args.shrink)
     return 0
 
 

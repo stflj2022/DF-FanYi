@@ -1,0 +1,1341 @@
+{"key": "infamous quarreler", "zh": "臭名昭著的争吵者"}
+{"key": "noted quarreler", "zh": "著名的争吵者"}
+{"key": "rumored dancer", "zh": "传闻中的舞者"}
+{"key": "legendary quarreler", "zh": "传奇的争吵者"}
+{"key": "legendary flatterer", "zh": "传奇的奉承者"}
+{"key": "infamous flatterer", "zh": "臭名昭著的奉承者"}
+{"key": "known quarreler", "zh": "知名的争吵者"}
+{"key": "rumored quarreler", "zh": "传闻中的争吵者"}
+{"key": "rumored flatterer", "zh": "传闻中的奉承者"}
+{"key": "noted flatterer", "zh": "著名的奉承者"}
+{"key": "known flatterer", "zh": "知名的奉承者"}
+{"key": "legendary preacher", "zh": "传奇的布道者"}
+{"key": "infamous preacher", "zh": "臭名昭著的布道者"}
+{"key": "rumored preacher", "zh": "传闻中的布道者"}
+{"key": "noted preacher", "zh": "著名的布道者"}
+{"key": "Set name", "zh": "设置名称"}
+{"key": "Max bins", "zh": "最大箱子数"}
+{"key": "Push off", "zh": "推开"}
+{"key": "One Shot", "zh": "单发"}
+{"key": "the Void", "zh": "虚空"}
+{"key": "in hours", "zh": "以小时计"}
+{"key": "the Time", "zh": "时间"}
+{"key": "the Deal", "zh": "交易"}
+{"key": "the Dead", "zh": "死者"}
+{"key": "the Pits", "zh": "深渊"}
+{"key": "the Tree", "zh": "树"}
+{"key": "the City", "zh": "城市"}
+{"key": "the Farm", "zh": "农场"}
+{"key": "the Lair", "zh": "巢穴"}
+{"key": "the Camp", "zh": "营地"}
+{"key": "Not yet completed", "zh": "尚未完成"}
+{"key": "Centered on target", "zh": "以目标为中心"}
+{"key": "Showing all", "zh": "显示全部"}
+{"key": "Showing important", "zh": "显示重要"}
+{"key": "Craft Guild", "zh": "工匠行会"}
+{"key": "It was last seen", "zh": "最后一次见到"}
+{"key": "Died in the year", "zh": "死于年份"}
+{"key": "alongside you", "zh": "与你并肩"}
+{"key": "You last spoke", "zh": "你最后一次交谈"}
+{"key": "You are beloved.", "zh": "你备受爱戴。"}
+{"key": "This is your lover.", "zh": "这是你的爱人。"}
+{"key": "This is your owner.", "zh": "这是你的主人。"}
+{"key": "This is your", "zh": "这是你的"}
+{"key": "of these creatures.", "zh": "这些生物中的。"}
+{"key": "You have killed", "zh": "你已杀死"}
+{"key": "known preacher", "zh": "知名传道者"}
+{"key": "Showing pin,last", "zh": "显示图钉,最后"}
+{"key": "Guide Agreement", "zh": "向导协议"}
+{"key": "Rescue Agreement", "zh": "救援协议"}
+{"key": "Showing type,date", "zh": "显示类型,日期"}
+{"key": "Overthrow Agreement", "zh": "推翻协议"}
+{"key": "Bound Servitude", "zh": "束缚奴役"}
+{"key": "Parley Arrangement", "zh": "谈判安排"}
+{"key": "Residency Agreement", "zh": "居住协议"}
+{"key": "Promise of Position", "zh": "职位承诺"}
+{"key": "Assassination Plot", "zh": "暗杀阴谋"}
+{"key": "Artifact Theft", "zh": "神器盗窃"}
+{"key": "Infiltration Plot", "zh": "渗透阴谋"}
+{"key": "Framing Plot", "zh": "陷害阴谋"}
+{"key": "Abduction Plot", "zh": "绑架阴谋"}
+{"key": "the Lake", "zh": "湖"}
+{"key": "the Fire", "zh": "火焰"}
+{"key": "no trade", "zh": "无贸易"}
+{"key": "Yes Text", "zh": "是文本"}
+{"key": "string too long", "zh": "字符串过长"}
+{"key": "vector too long", "zh": "向量过长"}
+{"key": "Bad optional access", "zh": "可选值访问错误"}
+{"key": "training partner", "zh": "训练伙伴"}
+{"key": "noted trade partner", "zh": "著名贸易伙伴"}
+{"key": "famously polite", "zh": "以礼貌闻名"}
+{"key": "notably polite", "zh": "特别礼貌"}
+{"key": "legendarily polite", "zh": "传奇般有礼"}
+{"key": "possibly polite", "zh": "可能礼貌"}
+{"key": "noted comrade", "zh": "著名同志"}
+{"key": "legendary comrade", "zh": "传奇同志"}
+{"key": "famous poet", "zh": "著名诗人"}
+{"key": "known storyteller", "zh": "知名说书人"}
+{"key": "rumored storyteller", "zh": "传闻中的说书人"}
+{"key": "rumored poet", "zh": "传闻中的诗人"}
+{"key": "legendary bard", "zh": "传奇吟游诗人"}
+{"key": "noted poet", "zh": "有名诗人"}
+{"key": "known poet", "zh": "知名诗人"}
+{"key": "known bard", "zh": "知名吟游诗人"}
+{"key": "rumored bard", "zh": "传闻中的吟游诗人"}
+{"key": "famous bard", "zh": "著名吟游诗人"}
+{"key": "noted bard", "zh": "有名吟游诗人"}
+{"key": "noted dancer", "zh": "有名舞者"}
+{"key": "known dancer", "zh": "知名舞者"}
+{"key": "legendary dancer", "zh": "传奇舞者"}
+{"key": "famous dancer", "zh": "著名舞者"}
+{"key": "No Artifact/", "zh": "无神器/"}
+{"key": "Insurrection with", "zh": "叛乱与"}
+{"key": "Aid rescue with", "zh": "救援协助与"}
+{"key": "Adventure with", "zh": "冒险与"}
+{"key": "Order: Kill", "zh": "命令：杀死"}
+{"key": "Order: Drive off", "zh": "命令：驱离"}
+{"key": "map/set too long", "zh": "地图/设置过长"}
+{"key": "Profession changes", "zh": "职业变化"}
+{"key": "Life changes", "zh": "生活变化"}
+{"key": "Job failures", "zh": "工作失败"}
+{"key": "Mental state", "zh": "精神状态"}
+{"key": "true warrior", "zh": "真正的战士"}
+{"key": "skilled warrior", "zh": "熟练的战士"}
+{"key": "With them", "zh": "与他们一起"}
+{"key": "from the", "zh": "来自"}
+{"key": "famous comrade", "zh": "著名同志"}
+{"key": "famous ally", "zh": "著名盟友"}
+{"key": "noted ally", "zh": "知名盟友"}
+{"key": "possible comrade", "zh": "可能的同志"}
+{"key": "legendary ally", "zh": "传奇盟友"}
+{"key": "legendary enemy", "zh": "传奇敌人"}
+{"key": "infamous enemy", "zh": "臭名昭著的敌人"}
+{"key": "known ally", "zh": "已知盟友"}
+{"key": "rumored ally", "zh": "传闻中的盟友"}
+{"key": "rumored enemy", "zh": "传闻中的敌人"}
+{"key": "noted enemy", "zh": "知名敌人"}
+{"key": "known enemy", "zh": "已知敌人"}
+{"key": "famous storyteller", "zh": "著名说书人"}
+{"key": "noted storyteller", "zh": "知名说书人"}
+{"key": "legendary poet", "zh": "传奇诗人"}
+{"key": "Bruising The Fat", "zh": "痛打胖子"}
+{"key": "Life of Adventure", "zh": "冒险生涯"}
+{"key": "Beyond The Gates", "zh": "城门之外"}
+{"key": "Hamlet Memoirs", "zh": "村庄回忆录"}
+{"key": "Into The Pits", "zh": "深入坑洞"}
+{"key": "Sisters of War", "zh": "战争姐妹"}
+{"key": "Pony Rider", "zh": "小马骑手"}
+{"key": "Two Coins", "zh": "两枚硬币"}
+{"key": "Combat music:", "zh": "战斗音乐："}
+{"key": "Toady Four", "zh": "托迪四"}
+{"key": "Toady Five", "zh": "托迪五"}
+{"key": "Toady Six", "zh": "托迪六"}
+{"key": "Haunted Lands", "zh": "闹鬼之地"}
+{"key": "Left click to move", "zh": "左键移动"}
+{"key": "Right click to move", "zh": "右键移动"}
+{"key": "When flying, use", "zh": "飞行时使用"}
+{"key": "Adventure mode", "zh": "冒险模式"}
+{"key": "Welcome adventurer!", "zh": "欢迎冒险者！"}
+{"key": "Adventurer's log", "zh": "冒险者日志"}
+{"key": "Movement options", "zh": "移动选项"}
+{"key": "Butcher and craft", "zh": "屠宰与制作"}
+{"key": "Hold and climb", "zh": "抓握与攀爬"}
+{"key": "Sleep and rest", "zh": "睡眠与休息"}
+{"key": "Shoot and throw", "zh": "射击与投掷"}
+{"key": "Name the identity", "zh": "命名身份"}
+{"key": "Name your pet", "zh": "为宠物命名"}
+{"key": "Name yourself", "zh": "为自己命名"}
+{"key": "(opens menu)", "zh": "（打开菜单）"}
+{"key": "Choose dye color", "zh": "选择染料颜色"}
+{"key": "Specify plant", "zh": "指定植物"}
+{"key": "Sabotage Plot", "zh": "破坏阴谋"}
+{"key": "War Starting Plot", "zh": "发动战争阴谋"}
+{"key": "Retrieve Artifact", "zh": "取回神器"}
+{"key": "agreed to join", "zh": "同意加入"}
+{"key": "Build Structure", "zh": "建造建筑"}
+{"key": "Offer Service", "zh": "提供服务"}
+{"key": "thereby freeing", "zh": "从而释放"}
+{"key": "agreed to guide", "zh": "同意引导"}
+{"key": "in order to rescue", "zh": "为了营救"}
+{"key": "somebody unknown", "zh": "某个不知名的人"}
+{"key": "was bound to serve", "zh": "被束缚服务"}
+{"key": "Agreement concluded", "zh": "协议达成"}
+{"key": "requested that", "zh": "请求"}
+{"key": "asked that", "zh": "要求"}
+{"key": "An order from", "zh": "来自...的命令"}
+{"key": "Specify color", "zh": "指定颜色"}
+{"key": "Setting mix color", "zh": "设置混合颜色"}
+{"key": "dye using", "zh": "使用染料"}
+{"key": "dye (opens menu)", "zh": "染料（打开菜单）"}
+{"key": "Setting plant", "zh": "设置植物"}
+{"key": "Portable mode", "zh": "便携模式"}
+{"key": "(fort mode)", "zh": "（要塞模式）"}
+{"key": "None yet", "zh": "暂无"}
+{"key": "Steam changelog:", "zh": "Steam更新日志："}
+{"key": "Steam metadata:", "zh": "Steam元数据："}
+{"key": "Publish mods", "zh": "发布模组"}
+{"key": "Steam description:", "zh": "Steam描述："}
+{"key": "Unknown Type Error", "zh": "未知类型错误"}
+{"key": "Fortress Testing", "zh": "要塞测试"}
+{"key": "Create new world", "zh": "创建新世界"}
+{"key": "middling warrior", "zh": "中等战士"}
+{"key": "Beware their", "zh": "当心他们的"}
+{"key": "bad cast", "zh": "施法失误"}
+{"key": "unknown error", "zh": "未知错误"}
+{"key": "Assigned to hunters", "zh": "指派给猎人"}
+{"key": "Assume Control", "zh": "接管控制"}
+{"key": "Practice fire", "zh": "射击练习"}
+{"key": "Bolts loaded:", "zh": "已装填弩矢："}
+{"key": "Resting orientation", "zh": "休息朝向"}
+{"key": "Fire at enemies", "zh": "向敌人射击"}
+{"key": "Missing citizens", "zh": "失踪的居民"}
+{"key": "Menu overview", "zh": "菜单概览"}
+{"key": "Popup: Travel", "zh": "弹出：旅行"}
+{"key": "Fortress mode", "zh": "要塞模式"}
+{"key": "Popup: Companions", "zh": "弹出：同伴"}
+{"key": "(Owes you", "zh": "（欠你"}
+{"key": "(You owe", "zh": "（你欠"}
+{"key": "You receive", "zh": "你收到"}
+{"key": "No name", "zh": "无名字"}
+{"key": "Select an identity.", "zh": "选择一个身份。"}
+{"key": "Your new identity:", "zh": "你的新身份："}
+{"key": "You are offering", "zh": "你正在提供"}
+{"key": "You are asking for", "zh": "你正在索要"}
+{"key": "Offer currency", "zh": "提供货币"}
+{"key": "Ask for currency", "zh": "索要货币"}
+{"key": "No available item.", "zh": "没有可用物品。"}
+{"key": "You butcher", "zh": "你屠宰了"}
+{"key": "You make", "zh": "你制作了"}
+{"key": "and more", "zh": "以及更多"}
+{"key": "not consumed", "zh": "未消耗"}
+{"key": "Object of worship:", "zh": "崇拜对象："}
+{"key": "New Identity", "zh": "新身份"}
+{"key": "Be Yourself", "zh": "做你自己"}
+{"key": "No origin", "zh": "无出身"}
+{"key": "Set origin", "zh": "设置出身"}
+{"key": "Set profession", "zh": "设置职业"}
+{"key": "Set worship", "zh": "设置崇拜"}
+{"key": "Assume identity", "zh": "采用身份"}
+{"key": "Advancing sites", "zh": "推进据点"}
+{"key": "Advancing entities", "zh": "推进实体"}
+{"key": "Aging items", "zh": "物品老化"}
+{"key": "Advancing seasons", "zh": "推进季节"}
+{"key": "You practice your", "zh": "你练习你的"}
+{"key": "You make nothing.", "zh": "你什么也没做出来。"}
+{"key": "Unit move", "zh": "单位移动"}
+{"key": "Advancing armies", "zh": "军队推进"}
+{"key": "Doing widget logic", "zh": "处理组件逻辑"}
+{"key": "Taking widget input", "zh": "接收组件输入"}
+{"key": "Periodic cleanup", "zh": "定期清理"}
+{"key": "Scheduling squads", "zh": "调度小队"}
+{"key": "Unit has no body!", "zh": "单位没有身体！"}
+{"key": "Siege engines", "zh": "攻城器械"}
+{"key": "Must set colors", "zh": "必须设置颜色"}
+{"key": "All siege engines", "zh": "所有攻城器械"}
+{"key": "Operator present", "zh": "操作员在场"}
+{"key": "Inactive load task", "zh": "非活动装载任务"}
+{"key": "No operator", "zh": "无操作员"}
+{"key": "Operator assigned", "zh": "操作员已分配"}
+{"key": "Exit text", "zh": "退出文本"}
+{"key": "Exit nineslice", "zh": "退出九宫格"}
+{"key": "You are sleeping.", "zh": "你正在睡觉。"}
+{"key": "You are stunned.", "zh": "你被击晕了。"}
+{"key": "You are winded.", "zh": "你气喘吁吁。"}
+{"key": "You are wrestling.", "zh": "你正在扭打。"}
+{"key": "You are nauseated.", "zh": "你感到恶心。"}
+{"key": "Wear this item.", "zh": "穿上这件物品。"}
+{"key": "Remove this item.", "zh": "脱下这件物品。"}
+{"key": "Remove an item.", "zh": "脱下一件物品。"}
+{"key": "Drop an item.", "zh": "丢下一件物品。"}
+{"key": "Wear an item.", "zh": "穿上一件物品。"}
+{"key": "View this item.", "zh": "查看这件物品。"}
+{"key": "Drop this item.", "zh": "丢下这件物品。"}
+{"key": "Loud grinding", "zh": "响亮的研磨声"}
+{"key": "Quiet grinding", "zh": "轻微的研磨声"}
+{"key": "Loud vocalization", "zh": "响亮的叫声"}
+{"key": "Popup: Inventory", "zh": "弹窗：物品栏"}
+{"key": "Popup: Talk", "zh": "弹窗：交谈"}
+{"key": "Popup: Perform", "zh": "弹窗：表演"}
+{"key": "Popup: Abilities", "zh": "弹窗：能力"}
+{"key": "Popup: Strike", "zh": "弹窗：攻击"}
+{"key": "Popup: Wrestle", "zh": "弹窗：摔跤"}
+{"key": "available to play.", "zh": "可游玩。"}
+{"key": "Quit without saving", "zh": "不保存退出"}
+{"key": "Finish Game", "zh": "结束游戏"}
+{"key": "Return to game", "zh": "返回游戏"}
+{"key": "Losing is Fun", "zh": "失败也很有趣"}
+{"key": "Danger Room", "zh": "危险室"}
+{"key": "Tarn Adams", "zh": "塔恩·亚当斯"}
+{"key": "Strike It Again", "zh": "再次挖掘"}
+{"key": "The Capital", "zh": "首都"}
+{"key": "Quiet vocalization", "zh": "轻声发声"}
+{"key": "Poem recitation", "zh": "诗歌朗诵"}
+{"key": "Musical voice", "zh": "乐声"}
+{"key": "Heavy combat", "zh": "重击战斗"}
+{"key": "Light combat", "zh": "轻击战斗"}
+{"key": "Loud movement", "zh": "响动"}
+{"key": "Quiet movement", "zh": "轻动"}
+{"key": "You are melancholy.", "zh": "你感到忧郁。"}
+{"key": "You are insane.", "zh": "你疯了。"}
+{"key": "You are possessed.", "zh": "你被附身了。"}
+{"key": "You are terrified.", "zh": "你感到恐惧。"}
+{"key": "You are berserk.", "zh": "你狂怒了。"}
+{"key": "You are catatonic.", "zh": "你处于紧张性昏厥。"}
+{"key": "You are depressed.", "zh": "你感到沮丧。"}
+{"key": "You are enraged.", "zh": "你愤怒了。"}
+{"key": "Go upward.", "zh": "向上走。"}
+{"key": "Toggle cloud view.", "zh": "切换云层视图。"}
+{"key": "Toggle track view.", "zh": "切换轨迹视图。"}
+{"key": "Toggle sneaking.", "zh": "切换潜行。"}
+{"key": "View the map.", "zh": "查看地图。"}
+{"key": "Use ability.", "zh": "使用技能。"}
+{"key": "Search for bugs.", "zh": "寻找虫子。"}
+{"key": "Set combat options.", "zh": "设置战斗选项。"}
+{"key": "Craft or butcher.", "zh": "制作或屠宰。"}
+{"key": "Jump somewhere.", "zh": "跳到某处。"}
+{"key": "Talk to somebody.", "zh": "与某人交谈。"}
+{"key": "You are thirsty.", "zh": "你口渴了。"}
+{"key": "You are hungry.", "zh": "你饿了。"}
+{"key": "You are drowsy.", "zh": "你困了。"}
+{"key": "You are paralyzed.", "zh": "你麻痹了。"}
+{"key": "No witnesses.", "zh": "没有目击者。"}
+{"key": "Interview Scheduled", "zh": "访谈已安排"}
+{"key": "unknown cheese", "zh": "未知奶酪"}
+{"key": "unknown powder", "zh": "未知粉末"}
+{"key": "unknown leaves", "zh": "未知叶子"}
+{"key": "unknown seeds", "zh": "未知种子"}
+{"key": "unknown meat", "zh": "未知肉"}
+{"key": "unknown liquid", "zh": "未知液体"}
+{"key": "unknown drink", "zh": "未知饮品"}
+{"key": "unknown plants", "zh": "未知植物"}
+{"key": "unknown fish", "zh": "未知鱼"}
+{"key": "and the chosen!", "zh": "以及被选中者！"}
+{"key": "natural minor", "zh": "自然小调"}
+{"key": "melodic minor", "zh": "旋律小调"}
+{"key": "harmonic minor", "zh": "和声小调"}
+{"key": "Reinforced Wall", "zh": "加固墙"}
+{"key": "Bolt thrower", "zh": "弩炮"}
+{"key": "bad variant access", "zh": "变体访问错误"}
+{"key": "Hunting assignment", "zh": "狩猎任务"}
+{"key": "Trainer: Any", "zh": "训练者：任意"}
+{"key": "Arena side", "zh": "竞技场一侧"}
+{"key": "once it is placed.", "zh": "一旦放置后。"}
+{"key": "Use last material", "zh": "使用上次材料"}
+{"key": "View your status.", "zh": "查看你的状态。"}
+{"key": "View your log.", "zh": "查看你的日志。"}
+{"key": "Move downward.", "zh": "向下移动。"}
+{"key": "Move upward.", "zh": "向上移动。"}
+{"key": "Go downward.", "zh": "向下走。"}
+{"key": "End travel.", "zh": "结束旅行。"}
+{"key": "Close the map.", "zh": "关闭地图。"}
+{"key": "You are oblivious.", "zh": "你毫无察觉。"}
+{"key": "Floor (remembered)", "zh": "地板（记忆）"}
+{"key": "Wall (remembered)", "zh": "墙壁（记忆）"}
+{"key": "Object (remembered)", "zh": "物体（记忆）"}
+{"key": "selected squads.", "zh": "已选小队。"}
+{"key": "selected positions.", "zh": "已选位置。"}
+{"key": "No water", "zh": "无水"}
+{"key": "No food", "zh": "无食物"}
+{"key": "Add ammunition", "zh": "添加弹药"}
+{"key": "No Ingredients", "zh": "无原料"}
+{"key": "Reset to default", "zh": "重置为默认"}
+{"key": "Right panel", "zh": "右侧面板"}
+{"key": "Cage/Chain Reqs", "zh": "笼/链需求"}
+{"key": "Convict list", "zh": "罪犯列表"}
+{"key": "Guards List", "zh": "守卫列表"}
+{"key": "Skill points:", "zh": "技能点："}
+{"key": "Social Awareness", "zh": "社交意识"}
+{"key": "Spatial Sense", "zh": "空间感"}
+{"key": "Kinesthetic Sense", "zh": "动觉"}
+{"key": "Linguistic Ability", "zh": "语言能力"}
+{"key": "Analytical Ability", "zh": "分析能力"}
+{"key": "Weapon skill.", "zh": "武器技能。"}
+{"key": "Affects skills:", "zh": "影响技能："}
+{"key": "Affects no skills.", "zh": "不影响技能。"}
+{"key": "Affects breath.", "zh": "影响呼吸。"}
+{"key": "Mount and pets", "zh": "坐骑与宠物"}
+{"key": "Disease Resistance", "zh": "疾病抗性"}
+{"key": "Below Average", "zh": "低于平均"}
+{"key": "Above Average", "zh": "高于平均"}
+{"key": "Skill remaining:", "zh": "剩余技能点："}
+{"key": "Few live there", "zh": "那里人烟稀少"}
+{"key": "is ruined.", "zh": "已成废墟。"}
+{"key": "Blank slate", "zh": "一片空白"}
+{"key": "Below average", "zh": "低于平均"}
+{"key": "is the force", "zh": "是力量"}
+{"key": "Their temple", "zh": "他们的神庙"}
+{"key": "Adventure awaits", "zh": "冒险在等待"}
+{"key": "Fortress mode item", "zh": "要塞模式物品"}
+{"key": "Ready to adventure!", "zh": "准备冒险！"}
+{"key": "Increase quality", "zh": "提高质量"}
+{"key": "Decrease quality", "zh": "降低质量"}
+{"key": "Accept personality", "zh": "接受个性"}
+{"key": "Accept equipment", "zh": "接受装备"}
+{"key": "of the great", "zh": "的伟大"}
+{"key": "linguistic ability", "zh": "语言能力"}
+{"key": "Go into", "zh": "进入"}
+{"key": "at this location", "zh": "在此位置"}
+{"key": "you slew", "zh": "你杀死了"}
+{"key": "(This occurred", "zh": "(此事发生于"}
+{"key": "Agree to have", "zh": "同意让"}
+{"key": "accept homage from", "zh": "接受来自...的效忠"}
+{"key": "Offer peace between", "zh": "提议在...之间和平"}
+{"key": "Demand that", "zh": "要求"}
+{"key": "Cancel tribute from", "zh": "取消来自...的贡品"}
+{"key": "Offer to have", "zh": "提议让"}
+{"key": "Refuse to have", "zh": "拒绝让"}
+{"key": "Request free room", "zh": "请求免费房间"}
+{"key": "Offer encouragement", "zh": "给予鼓励"}
+{"key": "Comment on weather", "zh": "评论天气"}
+{"key": "Say goodbye", "zh": "道别"}
+{"key": "spatial sense", "zh": "空间感"}
+{"key": "disease resistance", "zh": "疾病抗性"}
+{"key": "analytical ability", "zh": "分析能力"}
+{"key": "Above average", "zh": "高于平均"}
+{"key": "kinesthetic sense", "zh": "动觉"}
+{"key": "social awareness", "zh": "社交意识"}
+{"key": "Many are", "zh": "许多是"}
+{"key": "Greet listener", "zh": "问候听众"}
+{"key": "Offer your service", "zh": "提供你的服务"}
+{"key": "Name pet (new menu)", "zh": "给宠物命名（新菜单）"}
+{"key": "Ask about", "zh": "询问关于"}
+{"key": "Spread rumor of the", "zh": "散布关于"}
+{"key": "Bring up your death", "zh": "提起你的死亡"}
+{"key": "Rent room for", "zh": "租用房间"}
+{"key": "on its territory", "zh": "在其领土上"}
+{"key": "Accept the position", "zh": "接受职位"}
+{"key": "Refuse the position", "zh": "拒绝职位"}
+{"key": "Raise alarm", "zh": "拉响警报"}
+{"key": "Refuse the adoption", "zh": "拒绝收养"}
+{"key": "Accept into", "zh": "接纳"}
+{"key": "Ask to join", "zh": "请求加入"}
+{"key": "bone doctors", "zh": "接骨师"}
+{"key": "Refuse conversation", "zh": "拒绝交谈"}
+{"key": "Ask to be rescued", "zh": "请求救援"}
+{"key": "Reply to greeting", "zh": "回应问候"}
+{"key": "Ask what happened", "zh": "询问发生了什么"}
+{"key": "monster slayers", "zh": "怪物杀手"}
+{"key": "tavern keepers", "zh": "酒馆老板"}
+{"key": "Ask for", "zh": "请求"}
+{"key": "to made", "zh": "被制作"}
+{"key": "Agree to follow", "zh": "同意跟随"}
+{"key": "Comply with order", "zh": "服从命令"}
+{"key": "Agree completely", "zh": "完全同意"}
+{"key": "Refuse to yield", "zh": "拒绝屈服"}
+{"key": "Yield in terror", "zh": "恐惧屈服"}
+{"key": "Hawk your wares", "zh": "兜售你的货物"}
+{"key": "Initiate bartering", "zh": "开始交易"}
+{"key": "Do business", "zh": "做生意"}
+{"key": "Charge to serve", "zh": "效力"}
+{"key": "is dead", "zh": "已死亡"}
+{"key": "Tell listener about", "zh": "告诉听者关于"}
+{"key": "Accept calming", "zh": "接受安抚"}
+{"key": "Deride flattery", "zh": "嘲笑奉承"}
+{"key": "(not your values)", "zh": "（不是你的价值观）"}
+{"key": "Respond passively", "zh": "被动回应"}
+{"key": "Press the argument", "zh": "坚持论点"}
+{"key": "Reject the joke", "zh": "拒绝玩笑"}
+{"key": "Approve of the joke", "zh": "认可玩笑"}
+{"key": "Assume an identity", "zh": "伪装身份"}
+{"key": "Continue shouting", "zh": "继续喊叫"}
+{"key": "Ambush (snatcher)", "zh": "伏击（掳掠者）"}
+{"key": "Ambush (nature)", "zh": "伏击（自然）"}
+{"key": "(Charge) Tangle", "zh": "（冲锋）缠斗"}
+{"key": "Struck mineral", "zh": "击中矿物"}
+{"key": "Weapon twist", "zh": "扭绞武器"}
+{"key": "(Charge) Collision", "zh": "（冲锋）碰撞"}
+{"key": "Free from web", "zh": "挣脱蛛网"}
+{"key": "Overcome paralysis", "zh": "克服麻痹"}
+{"key": "No longer stunned", "zh": "不再眩晕"}
+{"key": "Block fire", "zh": "格挡火焰"}
+{"key": "with temple", "zh": "有神殿"}
+{"key": "with ruined temple", "zh": "有废墟神殿"}
+{"key": "Squad member", "zh": "小队成员"}
+{"key": "Accept background", "zh": "接受背景"}
+{"key": "Accept appearance", "zh": "接受外貌"}
+{"key": "Set your", "zh": "设置你的"}
+{"key": "Performance skill.", "zh": "表演技能。"}
+{"key": "Crafting skill.", "zh": "制作技能。"}
+{"key": "Slight Need", "zh": "轻微需求"}
+{"key": "Done customizing", "zh": "完成自定义"}
+{"key": "Full customization", "zh": "完全自定义"}
+{"key": "Intense Need", "zh": "极度需求"}
+{"key": "Strong Need", "zh": "强烈需求"}
+{"key": "Moderate Need", "zh": "中度需求"}
+{"key": "Nobody lives there", "zh": "无人居住"}
+{"key": "Breathe fire", "zh": "喷火"}
+{"key": "Shoot web", "zh": "喷射蛛网"}
+{"key": "Martial trance", "zh": "战技入定"}
+{"key": "Breath attack", "zh": "喷吐攻击"}
+{"key": "Job cancellation", "zh": "任务取消"}
+{"key": "(Adventure) Death", "zh": "（冒险者）死亡"}
+{"key": "Citizen death", "zh": "市民死亡"}
+{"key": "Pet death", "zh": "宠物死亡"}
+{"key": "Fall over", "zh": "摔倒"}
+{"key": "Caught in flame", "zh": "陷入火焰"}
+{"key": "Caught in web", "zh": "被蛛网缠住"}
+{"key": "Slam into unit", "zh": "撞击单位"}
+{"key": "Lose hold of item", "zh": "物品脱手"}
+{"key": "Attachment to item", "zh": "粘附物品"}
+{"key": "Regular beast", "zh": "普通野兽"}
+{"key": "Your reunion with", "zh": "你与"}
+{"key": "refusal to give", "zh": "拒绝给予"}
+{"key": "Your death", "zh": "你的死亡"}
+{"key": "crime of murder", "zh": "谋杀罪"}
+{"key": "crime of theft", "zh": "盗窃罪"}
+{"key": "crime of robbery", "zh": "抢劫罪"}
+{"key": "crime of espionage", "zh": "间谍罪"}
+{"key": "crime of treason", "zh": "叛国罪"}
+{"key": "crime of kidnapping", "zh": "绑架罪"}
+{"key": "failed insurrection", "zh": "失败的叛乱"}
+{"key": "to reclaim", "zh": "夺回"}
+{"key": "Your abduction", "zh": "你的绑架"}
+{"key": "on the", "zh": "在"}
+{"key": "You last", "zh": "你最后"}
+{"key": "heard this", "zh": "听到这个"}
+{"key": "Mechanism sounds", "zh": "机械声响"}
+{"key": "Cannot jump", "zh": "无法跳跃"}
+{"key": "No tracks", "zh": "无踪迹"}
+{"key": "Dodge projectile", "zh": "闪避投射物"}
+{"key": "Bandit grabs item", "zh": "强盗夺取物品"}
+{"key": "Attack interrupted", "zh": "攻击被打断"}
+{"key": "Attack caught", "zh": "攻击被接住"}
+{"key": "Fail to grab hold", "zh": "未能抓住"}
+{"key": "Travel complaint", "zh": "旅行抱怨"}
+{"key": "Ghost attack", "zh": "鬼魂攻击"}
+{"key": "Discovered site", "zh": "发现地点"}
+{"key": "Creature sound", "zh": "生物声响"}
+{"key": "Found trap", "zh": "发现陷阱"}
+{"key": "Interaction (user)", "zh": "互动（用户）"}
+{"key": "Undead attack", "zh": "亡灵攻击"}
+{"key": "Alignment Ambiance", "zh": "阵营氛围"}
+{"key": "total time waited:", "zh": "等待总时间："}
+{"key": "No errors.", "zh": "无错误。"}
+{"key": "Error loading file.", "zh": "加载文件时出错。"}
+{"key": "File not found.", "zh": "找不到文件。"}
+{"key": "Unknown error.", "zh": "未知错误。"}
+{"key": "'loop' layer.", "zh": "“loop”层。"}
+{"key": "of stingers.", "zh": "蜇刺者的"}
+{"key": "play for", "zh": "播放"}
+{"key": "beat of phrase:", "zh": "乐句节拍："}
+{"key": "can be removed", "zh": "可以移除"}
+{"key": "must be removed", "zh": "必须移除"}
+{"key": "will be added", "zh": "将被添加"}
+{"key": "was failed", "zh": "已失败"}
+{"key": "didn't find", "zh": "未找到"}
+{"key": "Cannot rest", "zh": "无法休息"}
+{"key": "Agreement satisfied", "zh": "协议已满足"}
+{"key": "Agreement abandoned", "zh": "协议已放弃"}
+{"key": "Guild founded", "zh": "行会成立"}
+{"key": "You failed to mount", "zh": "你未能骑上"}
+{"key": "First caravan", "zh": "首支商队"}
+{"key": "Performance quality", "zh": "演出质量"}
+{"key": "Composition failed", "zh": "作曲失败"}
+{"key": "New apprenticeship", "zh": "新学徒期"}
+{"key": "Petition ignored", "zh": "请愿被忽视"}
+{"key": "Tree chopped", "zh": "树木被砍伐"}
+{"key": "Thief (villain)", "zh": "窃贼（恶棍））"}
+{"key": "Clear weather", "zh": "晴朗天气"}
+{"key": "Wet season", "zh": "雨季"}
+{"key": "Guest arrives", "zh": "客人抵达"}
+{"key": "Break of dawn", "zh": "破晓时分"}
+{"key": "Put on item", "zh": "穿上物品"}
+{"key": "Take off item", "zh": "脱下物品"}
+{"key": "Failed to eat/drink", "zh": "进食/饮水失败"}
+{"key": "You feel hot/cold", "zh": "你感到热/冷"}
+{"key": "Profession change", "zh": "职业变更"}
+{"key": "Recruit gains skill", "zh": "新兵获得技能"}
+{"key": "No item to throw", "zh": "没有可投掷的物品"}
+{"key": "Check smells", "zh": "检查气味"}
+{"key": "Check weather", "zh": "查看天气"}
+{"key": "Check temperature", "zh": "查看温度"}
+{"key": "Check date", "zh": "查看日期"}
+{"key": "Cannot chop tree", "zh": "无法砍树"}
+{"key": "Cannot climb", "zh": "无法攀爬"}
+{"key": "Cannot stand", "zh": "无法站立"}
+{"key": "Masterpiece crafted", "zh": "杰作完成"}
+{"key": "Masterpiece defaced", "zh": "杰作被毁"}
+{"key": "You feed on victim", "zh": "你以受害者为食"}
+{"key": "Animal trained", "zh": "动物训练完成"}
+{"key": "Masterful dye", "zh": "精湛染色"}
+{"key": "Masterwork food", "zh": "大师级食物"}
+{"key": "Mandate ends", "zh": "命令结束"}
+{"key": "Site located", "zh": "地点已找到"}
+{"key": "Cough blood", "zh": "咳血"}
+{"key": "Vomit blood", "zh": "吐血"}
+{"key": "Merchants unloading", "zh": "商人卸货"}
+{"key": "Pet adopts owner", "zh": "宠物收养主人"}
+{"key": "Vermin bite", "zh": "害虫咬伤"}
+{"key": "Citizen kidnapped", "zh": "市民被绑架"}
+{"key": "Vermin disturbed", "zh": "害虫受惊"}
+{"key": "Engraving melted", "zh": "雕刻融化"}
+{"key": "Masterwork made", "zh": "制作出杰作"}
+{"key": "(Adventure) Awaken", "zh": "(冒险)苏醒"}
+{"key": "Animal trapped", "zh": "动物被困"}
+{"key": "Animal trap robbed", "zh": "动物陷阱被抢"}
+{"key": "Gremlin opened cage", "zh": "小精灵打开笼子"}
+{"key": "Trade diplomat", "zh": "贸易外交官"}
+{"key": "Citizen birth", "zh": "市民出生"}
+{"key": "Animal birth", "zh": "动物出生"}
+{"key": "Artifact made", "zh": "制作出神器"}
+{"key": "Item given name", "zh": "物品被命名"}
+{"key": "Already searched", "zh": "已搜索过"}
+{"key": "Nothing to interact", "zh": "无可互动对象"}
+{"key": "Nothing to examine", "zh": "无可检查对象"}
+{"key": "You yield", "zh": "你投降"}
+{"key": "Sewer Access", "zh": "下水道入口"}
+{"key": "right under you", "zh": "就在你正下方"}
+{"key": "below and", "zh": "下方及"}
+{"key": "above and", "zh": "上方及"}
+{"key": "up the", "zh": "向上"}
+{"key": "Abandoned houses", "zh": "废弃房屋"}
+{"key": "Abandoned hillocks", "zh": "废弃小丘"}
+{"key": "Underground Stair", "zh": "地下楼梯"}
+{"key": "Underground Farms", "zh": "地下农场"}
+{"key": "Ruined house", "zh": "残破房屋"}
+{"key": "Ruined hillock", "zh": "残破小丘"}
+{"key": "Abandoned house", "zh": "废弃房屋"}
+{"key": "Abandoned hillock", "zh": "废弃小丘"}
+{"key": "Ruined houses", "zh": "残破房屋"}
+{"key": "Ruined hillocks", "zh": "残破小丘"}
+{"key": "imprint in the", "zh": "在...中留下印记"}
+{"key": "to view other pages", "zh": "查看其他页面"}
+{"key": "in need of sleep", "zh": "需要睡眠"}
+{"key": "in need of drink", "zh": "需要喝水"}
+{"key": "You seek", "zh": "你寻求"}
+{"key": "Seek out", "zh": "寻找"}
+{"key": "\"You've found", "zh": "“你找到了"}
+{"key": "cannot climb.", "zh": "无法攀爬。"}
+{"key": "with your", "zh": "用你的"}
+{"key": "to your", "zh": "到你的"}
+{"key": "You strap", "zh": "你系上"}
+{"key": "pulls off", "zh": "扯下"}
+{"key": "pull off", "zh": "扯下"}
+{"key": "Offloading site...", "zh": "正在卸载站点..."}
+{"key": "Tree House", "zh": "树屋"}
+{"key": "Empty market", "zh": "空市场"}
+{"key": "Cheese market", "zh": "奶酪市场"}
+{"key": "Meat market", "zh": "肉类市场"}
+{"key": "Woven clothing shop", "zh": "织布服装店"}
+{"key": "Gem cutter's shop", "zh": "宝石切割店"}
+{"key": "Bone carver's shop", "zh": "骨雕店"}
+{"key": "General imports", "zh": "综合进口商店"}
+{"key": "Clothing imports", "zh": "服装进口商店"}
+{"key": "Leather shop", "zh": "皮革店"}
+{"key": "Cloth shop", "zh": "布料店"}
+{"key": "Leather goods shop", "zh": "皮具店"}
+{"key": "Metal craft shop", "zh": "金属工艺品店"}
+{"key": "Carpenter's shop", "zh": "木工店"}
+{"key": "Bowyer's shop", "zh": "制弓店"}
+{"key": "Weaponsmith's shop", "zh": "武器锻造店"}
+{"key": "Armorsmith's shop", "zh": "盔甲匠铺"}
+{"key": "Blacksmith's shop", "zh": "铁匠铺"}
+{"key": "Counting Tree", "zh": "计数树"}
+{"key": "Library Tree", "zh": "图书馆树"}
+{"key": "Tower Tree", "zh": "塔树"}
+{"key": "Guild Tree", "zh": "公会树"}
+{"key": "Shaping Tree", "zh": "塑造树"}
+{"key": "The Home Tree", "zh": "家园树"}
+{"key": "Tavern Tree", "zh": "酒馆树"}
+{"key": "Market Tree", "zh": "市场树"}
+{"key": "Food imports", "zh": "食物进口"}
+{"key": "Abandoned shop", "zh": "废弃的店铺"}
+{"key": "Castle Mound", "zh": "城堡土丘"}
+{"key": "Civic Mound", "zh": "市政土丘"}
+{"key": "Drinking Mound", "zh": "饮酒土丘"}
+{"key": "Follow your desire.", "zh": "追随你的渴望。"}
+{"key": "Beware doubt.", "zh": "当心疑虑。"}
+{"key": "Peace is cherished.", "zh": "和平弥足珍贵。"}
+{"key": "You are loved.", "zh": "你被爱着。"}
+{"key": "Stay the course.", "zh": "坚持到底。"}
+{"key": "Let some days pass.", "zh": "让几天过去。"}
+{"key": "Don't you know that", "zh": "你难道不知道"}
+{"key": "You are forgiven.", "zh": "你被原谅了。"}
+{"key": "without bound", "zh": "无界"}
+{"key": "It is noon.", "zh": "正午了。"}
+{"key": "Dawn is breaking.", "zh": "黎明破晓。"}
+{"key": "Strongest Odor:", "zh": "最强气味："}
+{"key": "You struggle for", "zh": "你挣扎着"}
+{"key": "Night is falling.", "zh": "夜幕降临。"}
+{"key": "You roll", "zh": "你被爱着。"}
+{"key": "Archer Reposition", "zh": "弓箭手重新部署"}
+{"key": "Maraude Target", "zh": "劫掠目标"}
+{"key": "Maraude Waypoint", "zh": "劫掠路径点"}
+{"key": "Nuked Job Reference", "zh": "已作废的任务引用"}
+{"key": "NULL Aid Requester", "zh": "空援助请求者"}
+{"key": "Offending mods are", "zh": "有问题的模组是"}
+{"key": "You must", "zh": "你必须"}
+{"key": "an ancient", "zh": "一位远古者"}
+{"key": "The enemy", "zh": "敌人"}
+{"key": "are on the march.", "zh": "正在行军。"}
+{"key": "Cease nocking", "zh": "停止搭箭"}
+{"key": "Roll all", "zh": "全体出动"}
+{"key": "Pull it out", "zh": "把它拔出来"}
+{"key": "Gain possession", "zh": "取得所有权"}
+{"key": "is here.", "zh": "在这里。"}
+{"key": "already have", "zh": "已有"}
+{"key": "ambiance playing.", "zh": "氛围音乐播放中。"}
+{"key": "alignment for", "zh": "阵营："}
+{"key": "diagetic sound", "zh": "游戏内音效"}
+{"key": "Bolt Thrower", "zh": "弩炮"}
+{"key": "Siege Workshop", "zh": "攻城工场"}
+{"key": "tiny population", "zh": "人口极少"}
+{"key": "an unknown place", "zh": "未知之地"}
+{"key": "Include tutorial", "zh": "包含教程"}
+{"key": "Easy difficulty", "zh": "简单难度"}
+{"key": "specific person", "zh": "特定人物"}
+{"key": "Specific person", "zh": "特定人物"}
+{"key": "Normal difficulty", "zh": "普通难度"}
+{"key": "Hard difficulty", "zh": "困难难度"}
+{"key": "Attribute points:", "zh": "属性点："}
+{"key": "You cannot speak", "zh": "你无法说话"}
+{"key": "You cannot perform", "zh": "你无法表演"}
+{"key": "Begin activity", "zh": "开始活动"}
+{"key": "Activity ongoing", "zh": "活动进行中"}
+{"key": "Activity end", "zh": "活动结束"}
+{"key": "Learned art form", "zh": "习得艺术形式"}
+{"key": "Job overwritten", "zh": "任务被覆盖"}
+{"key": "No fish to catch", "zh": "无鱼可捕"}
+{"key": "New demand", "zh": "新要求"}
+{"key": "New mandate", "zh": "新法令"}
+{"key": "Party organized", "zh": "宴会已组织"}
+{"key": "Beast guzzles drink", "zh": "野兽痛饮"}
+{"key": "Monarch arrived", "zh": "君主抵达"}
+{"key": "Satisfied monarch", "zh": "君主满意"}
+{"key": "Adventure automove", "zh": "冒险自动移动"}
+{"key": "Explore today.", "zh": "今日探索。"}
+{"key": "Begin an adventure.", "zh": "开始冒险。"}
+{"key": "Be generous today.", "zh": "今日慷慨。"}
+{"key": "Act quickly today.", "zh": "今日迅速行动。"}
+{"key": "Be compassionate.", "zh": "要慈悲。"}
+{"key": "Do not be reckless.", "zh": "不要鲁莽。"}
+{"key": "Be playful today.", "zh": "今日嬉戏。"}
+{"key": "You will released.", "zh": "你将被释放。"}
+{"key": "Focus today.", "zh": "今日专注。"}
+{"key": "near burning trunk", "zh": "燃烧的树干旁"}
+{"key": "near burning cap", "zh": "燃烧的树冠旁"}
+{"key": "near burning twigs", "zh": "燃烧的细枝旁"}
+{"key": "Name the", "zh": "命名"}
+{"key": "near magma", "zh": "岩浆旁"}
+{"key": "near lava", "zh": "熔岩旁"}
+{"key": "You heat the", "zh": "你加热"}
+{"key": "is already full.", "zh": "已经满了。"}
+{"key": "near campfire", "zh": "篝火旁"}
+{"key": "near fire", "zh": "火旁"}
+{"key": "is empty.", "zh": "是空的。"}
+{"key": "You fill your", "zh": "你装满了你的"}
+{"key": "You cannot read.", "zh": "你无法阅读。"}
+{"key": "You cannot see.", "zh": "你无法看见。"}
+{"key": "You cease nocking", "zh": "你停止搭箭"}
+{"key": "You pull out", "zh": "你拔出"}
+{"key": "You read", "zh": "你阅读"}
+{"key": "Load into", "zh": "装入"}
+{"key": "See to your legacy.", "zh": "守护你的遗产。"}
+{"key": "Be patient.", "zh": "耐心点。"}
+{"key": "Do not stall.", "zh": "不要拖延。"}
+{"key": "You unyield", "zh": "你松开"}
+{"key": "You strap item", "zh": "你系上物品"}
+{"key": "You draw", "zh": "你拔出"}
+{"key": "No grasp to draw", "zh": "无可拔之物"}
+{"key": "No item to strap", "zh": "无可系之物"}
+{"key": "No item to remove", "zh": "无可卸之物"}
+{"key": "No item to wear", "zh": "无可穿之物"}
+{"key": "No item to eat", "zh": "无可食之物"}
+{"key": "No item to contain", "zh": "无可装之物"}
+{"key": "No item to drop", "zh": "无可丢之物"}
+{"key": "Push item", "zh": "推动物品"}
+{"key": "Draw item", "zh": "拔出物品"}
+{"key": "Strap item", "zh": "系上物品"}
+{"key": "Gained site control", "zh": "获得据点控制权"}
+{"key": "Assumed position", "zh": "就任职位"}
+{"key": "Make Campfire", "zh": "制作篝火"}
+{"key": "with grab", "zh": "用抓取"}
+{"key": "with wrestling", "zh": "用摔跤"}
+{"key": "Throw item", "zh": "投掷物品"}
+{"key": "Shoot weapon", "zh": "射击武器"}
+{"key": "to act", "zh": "行动"}
+{"key": "Lie Down", "zh": "躺下"}
+{"key": "Tracks Visible:", "zh": "可见足迹："}
+{"key": "Push Object", "zh": "推动物体"}
+{"key": "Suck Blood", "zh": "吸血"}
+{"key": "Stop leading animal", "zh": "停止牵引动物"}
+{"key": "Lead animal", "zh": "牵引动物"}
+{"key": "You pick the lock!", "zh": "你撬开了锁！"}
+{"key": "You can't", "zh": "你无法"}
+{"key": "fell trees", "zh": "伐木"}
+{"key": "Indulge heartily.", "zh": "尽情享受。"}
+{"key": "Be practical.", "zh": "务实一点。"}
+{"key": "Do not fear loss.", "zh": "不要害怕失去。"}
+{"key": "Stop leading", "zh": "停止带领"}
+{"key": "as pet", "zh": "作为宠物"}
+{"key": "Go below hatch", "zh": "前往舱口下方"}
+{"key": "Climb down", "zh": "爬下"}
+{"key": "You pull the lever.", "zh": "你拉动了拉杆。"}
+{"key": "Path to here", "zh": "通往此处"}
+{"key": "Bash down", "zh": "砸开"}
+{"key": "releasing hold", "zh": "松开抓握"}
+{"key": "Hang from", "zh": "悬挂在"}
+{"key": "Attack error", "zh": "攻击错误"}
+{"key": "Combat error", "zh": "战斗错误"}
+{"key": "to no effect.", "zh": "无效。"}
+{"key": "In Awe", "zh": "敬畏"}
+{"key": "Grimly Satisfied", "zh": "阴郁满足"}
+{"key": "Nearly impossible", "zh": "几乎不可能"}
+{"key": "Even odds", "zh": "均等几率"}
+{"key": "Likely failure", "zh": "可能失败"}
+{"key": "Almost guaranteed", "zh": "几乎必然"}
+{"key": "Favorable odds", "zh": "有利几率"}
+{"key": "Likely success", "zh": "可能成功"}
+{"key": "Unfavorable odds", "zh": "不利几率"}
+{"key": "What will you say?", "zh": "你要说什么？"}
+{"key": "In party nearby", "zh": "在附近队伍中"}
+{"key": "Traveling through", "zh": "路过"}
+{"key": "How will you ask?", "zh": "你要怎么问？"}
+{"key": "Vanishing Profile", "zh": "消失的轮廓"}
+{"key": "Tiny Profile", "zh": "微小的轮廓"}
+{"key": "How will", "zh": "如何"}
+{"key": "Go ahead", "zh": "继续"}
+{"key": "In party:", "zh": "队伍中："}
+{"key": "Not visible", "zh": "不可见"}
+{"key": "direct hit", "zh": "直接命中"}
+{"key": "very square", "zh": "非常方正"}
+{"key": "can't quite connect", "zh": "几乎无法命中"}
+{"key": "can't land squarely", "zh": "无法正面命中"}
+{"key": "fairly solid", "zh": "相当扎实"}
+{"key": "Easier strike", "zh": "较容易打击"}
+{"key": "Easy strike", "zh": "容易打击"}
+{"key": "can only graze", "zh": "只能擦过"}
+{"key": "Simple strike", "zh": "简单打击"}
+{"key": "Difficult strike", "zh": "困难打击"}
+{"key": "Impossible strike", "zh": "不可能打击"}
+{"key": "Trusts you", "zh": "信任你"}
+{"key": "Neutral attitude", "zh": "态度中立"}
+{"key": "Scared of you", "zh": "害怕你"}
+{"key": "Terrified of you", "zh": "恐惧你"}
+{"key": "Respects you", "zh": "尊重你"}
+{"key": "No fear of you", "zh": "不怕你"}
+{"key": "Likes you", "zh": "喜欢你"}
+{"key": "Loves you", "zh": "爱你"}
+{"key": "Dislikes you", "zh": "不喜欢你"}
+{"key": "Hates you", "zh": "恨你"}
+{"key": "Toward you:", "zh": "对你的态度："}
+{"key": "Negative attitude", "zh": "负面态度"}
+{"key": "Positive attitude", "zh": "正面态度"}
+{"key": "You cannot", "zh": "你不能"}
+{"key": "In Anguish", "zh": "痛苦中"}
+{"key": "Impossible throw", "zh": "不可能的投掷"}
+{"key": "Tricky shot", "zh": "棘手的射击"}
+{"key": "Difficult throw", "zh": "困难的投掷"}
+{"key": "Simple throw", "zh": "简单的投掷"}
+{"key": "Easier shot", "zh": "较容易的射击"}
+{"key": "Easy throw", "zh": "容易的投掷"}
+{"key": "Simple shot", "zh": "简单的射击"}
+{"key": "Easier throw", "zh": "较容易的投掷"}
+{"key": "Impossible shot", "zh": "不可能的射击"}
+{"key": "Where will you aim?", "zh": "你要瞄准哪里？"}
+{"key": "Wrestle using", "zh": "用……摔跤"}
+{"key": "Grabbed their", "zh": "抓住了他们的"}
+{"key": "Both holding", "zh": "双方都抓住"}
+{"key": "Grabbed your", "zh": "抓住了你的"}
+{"key": "cannot jump.", "zh": "无法跳跃。"}
+{"key": "You drop", "zh": "你放下"}
+{"key": "You empty", "zh": "你清空"}
+{"key": "View engraving", "zh": "查看雕刻"}
+{"key": "Your inventory", "zh": "你的物品栏"}
+{"key": "to interact.", "zh": "进行互动。"}
+{"key": "Where do you put", "zh": "你要放在哪里"}
+{"key": "Unknown interaction", "zh": "未知互动"}
+{"key": "Jump to the", "zh": "跳到"}
+{"key": "Quickly shoot", "zh": "快速射击"}
+{"key": "own tile only", "zh": "仅自己的格子"}
+{"key": "adjacent only", "zh": "仅相邻"}
+{"key": "this location", "zh": "此位置"}
+{"key": "Tint leather", "zh": "给皮革染色"}
+{"key": "Tint cloth", "zh": "给布料染色"}
+{"key": "Tint thread", "zh": "给线染色"}
+{"key": "Normal strike", "zh": "普通击打"}
+{"key": "Tricky strike", "zh": "巧妙击打"}
+{"key": "When necessary", "zh": "必要时"}
+{"key": "When possible", "zh": "可能时"}
+{"key": "Attack Preference", "zh": "攻击偏好"}
+{"key": "Worst Possible", "zh": "最差情况"}
+{"key": "Swimming Preference", "zh": "游泳偏好"}
+{"key": "Really attack", "zh": "真正攻击"}
+{"key": "Charge Defense", "zh": "冲锋防御"}
+{"key": "Dodge Preference", "zh": "闪避偏好"}
+{"key": "Normal shot", "zh": "普通射击"}
+{"key": "Tricky throw", "zh": "巧妙投掷"}
+{"key": "Easy shot", "zh": "简单射击"}
+{"key": "Normal throw", "zh": "普通投掷"}
+{"key": "Difficult shot", "zh": "困难射击"}
+{"key": "bolt thrower parts", "zh": "弩炮部件"}
+{"key": "dye mix", "zh": "染料混合物"}
+{"key": "Save failed:", "zh": "保存失败："}
+{"key": "Received signal", "zh": "收到信号"}
+{"key": "gentle breeze", "zh": "微风"}
+{"key": "is falling", "zh": "正在下落"}
+{"key": "You smell", "zh": "你闻到"}
+{"key": "freshly-baked goods", "zh": "新鲜烘焙的食品"}
+{"key": "bug innards", "zh": "虫子内脏"}
+{"key": "cooked flesh", "zh": "熟肉"}
+{"key": "At your location", "zh": "在你所在位置"}
+{"key": "To the northwest", "zh": "在西北方"}
+{"key": "To the northeast", "zh": "在东北方"}
+{"key": "To the southwest", "zh": "在西南方"}
+{"key": "To the southeast", "zh": "在东南方"}
+{"key": "new moon", "zh": "新月"}
+{"key": "is rising", "zh": "正在升起"}
+{"key": "waxing gibbous moon", "zh": "盈凸月"}
+{"key": "waxing half moon", "zh": "上弦月"}
+{"key": "waning gibbous moon", "zh": "亏凸月"}
+{"key": "behind the clouds", "zh": "云层之后"}
+{"key": "full moon", "zh": "满月"}
+{"key": "The stars are out", "zh": "星星出来了"}
+{"key": "The sun is in the", "zh": "太阳在"}
+{"key": "The sun is rising", "zh": "太阳正在升起"}
+{"key": "in the west", "zh": "西方"}
+{"key": "in the east", "zh": "东方"}
+{"key": "strong breeze", "zh": "强风"}
+{"key": "heavy wind", "zh": "大风"}
+{"key": "mighty wind", "zh": "狂风"}
+{"key": "Lying Down", "zh": "躺下"}
+{"key": "Compose music", "zh": "作曲"}
+{"key": "Throwing item", "zh": "投掷物品"}
+{"key": "Shooting weapon", "zh": "射击武器"}
+{"key": "Pushing Object", "zh": "推动物体"}
+{"key": "Holding terrain", "zh": "抓住地形"}
+{"key": "Sucking Blood", "zh": "吸血"}
+{"key": "Regaining balance", "zh": "恢复平衡"}
+{"key": "Holding item", "zh": "持有物品"}
+{"key": "Leading animal", "zh": "牵引动物"}
+{"key": "Highly Loyal", "zh": "高度忠诚"}
+{"key": "General Mood:", "zh": "总体心情："}
+{"key": "Low respect for you", "zh": "对你不太尊重"}
+{"key": "No respect for you", "zh": "对你不尊重"}
+{"key": "Distrusts you", "zh": "不信任你"}
+{"key": "Minuscule Profile", "zh": "极小体型"}
+{"key": "Best Possible", "zh": "最佳情况"}
+{"key": "Small Profile", "zh": "小体型"}
+{"key": "Very Small Profile", "zh": "很小体型"}
+{"key": "Average Profile", "zh": "中等体型"}
+{"key": "In Vegetation", "zh": "在植被中"}
+{"key": "Open Area", "zh": "开阔地带"}
+{"key": "Low Light", "zh": "低光照"}
+{"key": "Huge Profile", "zh": "巨大体型"}
+{"key": "Gigantic Profile", "zh": "庞大体型"}
+{"key": "Large Profile", "zh": "大体型"}
+{"key": "Very Large Profile", "zh": "很大体型"}
+{"key": "Gargantuan Profile", "zh": "巨硕体型"}
+{"key": "Until dawn", "zh": "直到黎明"}
+{"key": "Cannot see dawn.", "zh": "无法看到黎明。"}
+{"key": "(no extra info)", "zh": "(无额外信息)"}
+{"key": "light userdata", "zh": "轻量用户数据"}
+{"key": "(...tail calls...)", "zh": "(...尾调用...)"}
+{"key": "stack traceback:", "zh": "堆栈回溯："}
+{"key": "main chunk", "zh": "主程序块"}
+{"key": "not enough stack", "zh": "栈空间不足"}
+{"key": "Lua warning:", "zh": "Lua警告："}
+{"key": "too many upvalues", "zh": "上值过多"}
+{"key": "buffer too large", "zh": "缓冲区过大"}
+{"key": "value expected", "zh": "需要值"}
+{"key": "stack overflow", "zh": "栈溢出"}
+{"key": "not enough memory", "zh": "内存不足"}
+{"key": "index out of range", "zh": "索引超出范围"}
+{"key": "assertion failed!", "zh": "断言失败！"}
+{"key": "nil or table", "zh": "nil或表"}
+{"key": "interval is empty", "zh": "区间为空"}
+{"key": "(for state)", "zh": "（用于状态）"}
+{"key": "unexpected symbol", "zh": "意外符号"}
+{"key": "syntax error", "zh": "语法错误"}
+{"key": "local variables", "zh": "局部变量"}
+{"key": "main function", "zh": "主函数"}
+{"key": "no value", "zh": "无值"}
+{"key": "unfinished capture", "zh": "未完成的捕获"}
+{"key": "pattern too complex", "zh": "模式过于复杂"}
+{"key": "too many captures", "zh": "捕获过多"}
+{"key": "value out of range", "zh": "值超出范围"}
+{"key": "too many results", "zh": "结果过多"}
+{"key": "unsigned overflow", "zh": "无符号溢出"}
+{"key": "integer overflow", "zh": "整数溢出"}
+{"key": "table index is nil", "zh": "表索引为nil"}
+{"key": "You pack the", "zh": "你包扎了"}
+{"key": "You put the", "zh": "你放置了"}
+{"key": "You cannot speak.", "zh": "你无法说话。"}
+{"key": "cannot speak.", "zh": "无法说话。"}
+{"key": "You drink the", "zh": "你喝了"}
+{"key": "You eat the", "zh": "你吃了"}
+{"key": "is too hot.", "zh": "太烫了。"}
+{"key": "is too salty.", "zh": "太咸了。"}
+{"key": "You empty the", "zh": "你清空了"}
+{"key": "You take off", "zh": "你脱下了"}
+{"key": "You take out the", "zh": "你取出了"}
+{"key": "You lick the", "zh": "你舔了"}
+{"key": "is too cold.", "zh": "太冷了。"}
+{"key": "You begin to throw", "zh": "你开始投掷"}
+{"key": "Put or place", "zh": "放置"}
+{"key": "Dye leather", "zh": "皮革染色"}
+{"key": "Load bolt thrower", "zh": "装填弩炮"}
+{"key": "Fire bolt thrower", "zh": "发射弩炮"}
+{"key": "Secondary Select", "zh": "次要选择"}
+{"key": "Select all", "zh": "全选"}
+{"key": "Move selector left", "zh": "左移选择器"}
+{"key": "Move selector right", "zh": "右移选择器"}
+{"key": "Adventure: Throw", "zh": "冒险：投掷"}
+{"key": "Adventure: Fire", "zh": "冒险：射击"}
+{"key": "Adventure: Sneak", "zh": "冒险：潜行"}
+{"key": "Adventure: Center", "zh": "冒险：居中"}
+{"key": "Adventure: Travel", "zh": "冒险：旅行"}
+{"key": "Adventure: Get Date", "zh": "冒险：日期"}
+{"key": "Adventure: Status", "zh": "冒险：状态"}
+{"key": "Adventure: Sleep", "zh": "冒险：睡觉"}
+{"key": "table overflow", "zh": "表格溢出"}
+{"key": "array too big", "zh": "数组过大"}
+{"key": "binary string", "zh": "二进制字符串"}
+{"key": "corrupted chunk", "zh": "损坏的数据块"}
+{"key": "format mismatch", "zh": "格式不匹配"}
+{"key": "version mismatch", "zh": "版本不匹配"}
+{"key": "truncated chunk", "zh": "截断的数据块"}
+{"key": "out of bounds", "zh": "越界"}
+{"key": "initial value", "zh": "初始值"}
+{"key": "'for' step is zero", "zh": "'for' 步长为零"}
+{"key": "unknown lands", "zh": "未知之地"}
+{"key": "Start FullScreen?", "zh": "启动全屏？"}
+{"key": "Polish stones", "zh": "打磨石头"}
+{"key": "DOUBLE TAGGED ITEM:", "zh": "双标记物品："}
+{"key": "Extract from", "zh": "提取自"}
+{"key": "Adventure: Attack", "zh": "冒险：攻击"}
+{"key": "Adventure: Wrestle", "zh": "冒险：擒拿"}
+{"key": "Adventure: Look", "zh": "冒险：观察"}
+{"key": "Adventure: Search", "zh": "冒险：搜索"}
+{"key": "Adventure: Yield", "zh": "冒险：投降"}
+{"key": "Adventure: Jump", "zh": "冒险：跳跃"}
+{"key": "Adventure: Talk", "zh": "冒险：交谈"}
+{"key": "Adventure: Perform", "zh": "冒险：表演"}
+{"key": "Main: One-Step", "zh": "主界面：单步"}
+{"key": "Main: Pause/Resume", "zh": "主界面：暂停/继续"}
+{"key": "Main: Hot Keys", "zh": "主界面：快捷键"}
+{"key": "Adventure: Log", "zh": "冒险：日志"}
+{"key": "Adventure: Log, Pin", "zh": "冒险：日志，固定"}
+{"key": "Menu Confirm", "zh": "菜单确认"}
+{"key": "Main: Dig", "zh": "主界面：挖掘"}
+{"key": "table or string", "zh": "表或字符串"}
+{"key": "base out of range", "zh": "基数超出范围"}
+{"key": "invalid option", "zh": "无效选项"}
+{"key": "external hook", "zh": "外部钩子"}
+{"key": "tail call", "zh": "尾调用"}
+{"key": "level out of range", "zh": "级别超出范围"}
+{"key": "integer index", "zh": "整数索引"}
+{"key": "for iterator", "zh": "循环迭代器"}
+{"key": "invalid format", "zh": "无效格式"}
+{"key": "too many arguments", "zh": "参数过多"}
+{"key": "invalid mode", "zh": "无效模式"}
+{"key": "closed file", "zh": "文件已关闭"}
+{"key": "file (closed)", "zh": "文件（已关闭）"}
+{"key": "unfinished string", "zh": "未完成字符串"}
+{"key": "malformed number", "zh": "格式错误的数字"}
+{"key": "Main: World", "zh": "主菜单：世界"}
+{"key": "Main: Justice", "zh": "主菜单：司法"}
+{"key": "Main: Stocks", "zh": "主菜单：库存"}
+{"key": "Main: Announcements", "zh": "主菜单：公告"}
+{"key": "Main: Recenter", "zh": "主菜单：重新居中"}
+{"key": "Animals, Slaughter", "zh": "动物，屠宰"}
+{"key": "Animals, Geld", "zh": "动物，阉割"}
+{"key": "Animals, Trainer", "zh": "动物，驯兽师"}
+{"key": "Kitchen, Cook", "zh": "厨房，烹饪"}
+{"key": "Kitchen, Brew", "zh": "厨房，酿造"}
+{"key": "Justice, Convict", "zh": "司法，定罪"}
+{"key": "Designate, Dig", "zh": "指定，挖掘"}
+{"key": "Designate, UD Stair", "zh": "指定，上下楼梯"}
+{"key": "Designate, Ramp", "zh": "指定，斜坡"}
+{"key": "Designate, Channel", "zh": "指定，沟渠"}
+{"key": "To the west", "zh": "向西"}
+{"key": "To the east", "zh": "向东"}
+{"key": "To the north", "zh": "向北"}
+{"key": "To the south", "zh": "向南"}
+{"key": "It is freezing.", "zh": "天寒地冻"}
+{"key": "Freshest track", "zh": "最新足迹"}
+{"key": "It is scorching.", "zh": "酷热难耐"}
+{"key": "It is warm.", "zh": "温暖"}
+{"key": "It is cool.", "zh": "凉爽"}
+{"key": "It is burning.", "zh": "灼热"}
+{"key": "It is deathly cold.", "zh": "严寒刺骨"}
+{"key": "is setting", "zh": "正在落下"}
+{"key": "to the east", "zh": "向东"}
+{"key": "to the west", "zh": "向西"}
+{"key": "waning half moon", "zh": "下弦月"}
+{"key": "blowing from the", "zh": "从...吹来"}
+{"key": "Continue waiting", "zh": "继续等待"}
+{"key": "Return to arena", "zh": "返回竞技场"}
+{"key": "the settings menu.", "zh": "设置菜单。"}
+{"key": "Finish action", "zh": "完成行动"}
+{"key": "In conflict!", "zh": "冲突中！"}
+{"key": "Finish anyway", "zh": "强行完成"}
+{"key": "asked that you", "zh": "要求你"}
+{"key": "Continue action", "zh": "继续行动"}
+{"key": "Stop action", "zh": "停止行动"}
+{"key": "requested that you", "zh": "请求你"}
+{"key": "Runtime error:", "zh": "运行时错误："}
+{"key": "Syntax error:", "zh": "语法错误："}
+{"key": "Error error (sic)", "zh": "错误错误（原文如此）"}
+{"key": "(no name)", "zh": "（无名）"}
+{"key": "Designate, Mine All", "zh": "指定，全部挖掘"}
+{"key": "Designate, Min Gems", "zh": "指定，挖掘宝石"}
+{"key": "Designate, Smooth", "zh": "指定，平滑"}
+{"key": "Designate, Engrave", "zh": "指定，雕刻"}
+{"key": "Designate, Fortify", "zh": "指定，加固"}
+{"key": "Designate, Reclaim", "zh": "指定，回收"}
+{"key": "Designate, Forbid", "zh": "指定，禁止"}
+{"key": "Designate, Melt", "zh": "指定，融化"}
+{"key": "Designate, No Melt", "zh": "指定，不融化"}
+{"key": "Designate, Dump", "zh": "指定，丢弃"}
+{"key": "Designate, No Dump", "zh": "指定，不丢弃"}
+{"key": "Designate, Hide", "zh": "指定，隐藏"}
+{"key": "Designate, No Hide", "zh": "指定，不隐藏"}
+{"key": "String: Backspace", "zh": "字符串：退格"}
+{"key": "Custom: Down", "zh": "自定义：下"}
+{"key": "less sluggish.", "zh": "不再那么迟缓。"}
+{"key": "less nauseated.", "zh": "不再那么恶心。"}
+{"key": "less dizzy.", "zh": "不再那么头晕。"}
+{"key": "the Primordial", "zh": "原初之物"}
+{"key": "mythical lair", "zh": "神话巢穴"}
+{"key": "mythical palace", "zh": "神话宫殿"}
+{"key": "mythical dungeon", "zh": "神话地牢"}
+{"key": "four thousand", "zh": "四千"}
+{"key": "three thousand", "zh": "三千"}
+{"key": "two thousand", "zh": "两千"}
+{"key": "some dozens", "zh": "几十"}
+{"key": "thirty thousand", "zh": "三万"}
+{"key": "twenty thousand", "zh": "两万"}
+{"key": "ten thousand", "zh": "一万"}
+{"key": "nine thousand", "zh": "九千"}
+{"key": "eight thousand", "zh": "八千"}
+{"key": "seven thousand", "zh": "七千"}
+{"key": "six thousand", "zh": "六千"}
+{"key": "five thousand", "zh": "五千"}
+{"key": "hundred thousands", "zh": "数十万"}
+{"key": "hundred thousand", "zh": "十万"}
+{"key": "ninety thousand", "zh": "九万"}
+{"key": "eighty thousand", "zh": "八万"}
+{"key": "seventy thousand", "zh": "七万"}
+{"key": "sixty thousand", "zh": "六万"}
+{"key": "fifty thousand", "zh": "五万"}
+{"key": "forty thousand", "zh": "四万"}
+{"key": "one million", "zh": "一百万"}
+{"key": "Siege operators", "zh": "攻城操作员"}
+{"key": "few dozen", "zh": "几十"}
+{"key": "Custom: Left", "zh": "自定义：左"}
+{"key": "Custom: Right", "zh": "自定义：右"}
+{"key": "Custom: Tab", "zh": "自定义：Tab"}
+{"key": "Custom: Home", "zh": "自定义：Home"}
+{"key": "Custom: End", "zh": "自定义：End"}
+{"key": "Custom: PgUp", "zh": "自定义：PgUp"}
+{"key": "Custom: Insert", "zh": "自定义：Insert"}
+{"key": "Custom: Delete", "zh": "自定义：Delete"}
+{"key": "Numpad Period", "zh": "小键盘小数点"}
+{"key": "Numpad Divide", "zh": "小键盘除号"}
+{"key": "Numpad Multiply", "zh": "小键盘乘号"}
+{"key": "Numpad Plus", "zh": "小键盘加号"}
+{"key": "Numpad Minus", "zh": "小键盘减号"}
+{"key": "Numpad Enter", "zh": "小键盘回车"}
+{"key": "Numpad Equals", "zh": "小键盘等号"}
+{"key": "mysterious dungeon", "zh": "神秘地牢"}
+{"key": "mysterious lair", "zh": "神秘巢穴"}
+{"key": "mysterious palace", "zh": "神秘宫殿"}
+{"key": "Unrecognized tile:", "zh": "无法识别的格子："}
+{"key": "Image not found", "zh": "未找到图像"}
+{"key": "OVERWROTE JOB:", "zh": "覆盖了任务："}
+{"key": "Elite Crossbowmen", "zh": "精英弩手"}
+{"key": "Elite Bowmen", "zh": "精英弓箭手"}
+{"key": "You shoot", "zh": "你射击"}
+{"key": "Syndrome has only", "zh": "综合征只有"}
+{"key": "eats the", "zh": "吃掉了"}
+{"key": "drinks the", "zh": "喝掉了"}
+{"key": "OK Button", "zh": "确定按钮"}
+{"key": "Warning Text", "zh": "警告文本"}
+{"key": "Yes/No Modal", "zh": "是/否模态对话框"}
+{"key": "Night creatures!", "zh": "夜行生物！"}
+{"key": "Night creature!", "zh": "夜行生物！"}
+{"key": "is already", "zh": "已经是"}
+{"key": "You finish", "zh": "你完成了"}
+{"key": "invalid block type", "zh": "无效的块类型"}
+{"key": "invalid window size", "zh": "无效的窗口大小"}
+{"key": "stream end", "zh": "流结束"}
+{"key": "need dictionary", "zh": "需要字典"}
+{"key": "insufficient memory", "zh": "内存不足"}
+{"key": "data error", "zh": "数据错误"}
+{"key": "stream error", "zh": "流错误"}
+{"key": "file error", "zh": "文件错误"}
+{"key": "buffer error", "zh": "缓冲区错误"}
+{"key": "Unit List", "zh": "单位列表"}
+{"key": "Unit selector", "zh": "单位选择器"}
+{"key": "OK Text", "zh": "确定"}
+{"key": "Yes Button", "zh": "是"}
+{"key": "Warning Modal", "zh": "警告"}
+{"key": "No Button", "zh": "否"}
+{"key": "No Text", "zh": "否"}
+{"key": "Happiness indicator", "zh": "幸福度指示器"}
+{"key": "Unit sheet button", "zh": "单位面板按钮"}
+{"key": "Tame (Small)", "zh": "驯服（小）"}
+{"key": "Recenter button", "zh": "重新居中按钮"}
+{"key": "Wild Animal (Small)", "zh": "野生动物（小）"}
+{"key": "unknown material", "zh": "未知材料"}
+{"key": "You have composed", "zh": "你已创作"}
+{"key": "You feel uneasy.", "zh": "你感到不安。"}
+{"key": "You have authored", "zh": "你已撰写"}
+{"key": "You have written", "zh": "你已写"}
+{"key": "Dwarf mode", "zh": "矮人模式"}
+{"key": "Histories of Greed and Perseverance", "zh": "贪婪与坚韧的历史"}
+{"key": "This is a pig tail cloth.  The material is gray.  ", "zh": "这是一块猪尾布。材料是灰色的。"}
+{"key": "Elevation 43", "zh": "海拔43"}
+{"key": "Elevation 44", "zh": "海拔44"}
+{"key": "This is a Plant Barrel (tower-cap) <#10>.  ", "zh": "这是一个植物桶（塔帽菇）<#10>。"}
+{"key": "This is a ashen barrel.  ", "zh": "这是一个梣木桶。"}
+{"key": "This is a walnut wood crutch.  ", "zh": "这是一根胡桃木拐杖。"}
+{"key": "Bëmbul Swordbegin", "zh": "贝姆布尔·剑始"}
+{"key": "10 Years Old", "zh": "10岁"}
+{"key": "\"One must always be loyal to their cause and the ", "zh": "“一个人必须始终忠于自己的事业和"}
+{"key": "ones they serve.\"", "zh": "所侍奉之人。”"}
+{"key": "Left click to choose ", "zh": "左键点击选择"}
+{"key": "corners of a rectangle.", "zh": "矩形的角。"}
+{"key": "Hold left button to ", "zh": "按住左键以"}
+{"key": "Page Down", "zh": "Page Down"}
+{"key": "unknown substance", "zh": "未知物质"}
+{"key": "unknown slush", "zh": "未知雪泥"}
+{"key": "looks less pained.", "zh": "看起来不那么痛苦了。"}
+{"key": "less swelling.", "zh": "肿胀减轻。"}
+{"key": "feel less pain.", "zh": "疼痛感减轻。"}
+{"key": "from nerve damage.", "zh": "来自神经损伤。"}
+{"key": "no longer infected.", "zh": "不再感染。"}
+{"key": "body parts regrow!", "zh": "身体部位再生！"}
+{"key": "less bleeding.", "zh": "出血减少。"}
+{"key": "fewer wounds.", "zh": "伤口减少。"}
+{"key": "tissues regrow!", "zh": "组织再生！"}
+{"key": "and more regrow!", "zh": "还有更多再生！"}
+{"key": "less feverish.", "zh": "不那么发烧了。"}
+{"key": "geldables regrow!", "zh": "可阉割部位再生！"}
+{"key": "draw.", "zh": "绘制。"}
+{"key": "Erase a portion of this ", "zh": "擦除此区域的"}
+{"key": "stockpile.", "zh": "堆料区。"}
+{"key": "Remove the stockpile ", "zh": "移除堆料区"}
+{"key": "being painted ", "zh": "正在绘制的"}
+{"key": "permanently.  Also ", "zh": "永久。同时"}
+{"key": "removes existing zones!", "zh": "移除现有区域！"}
+{"key": "areas", "zh": "区域"}
+{"key": "designate", "zh": "指定"}
+{"key": "citizens", "zh": "市民"}
+{"key": "work,", "zh": "工作，"}
+{"key": "socialize,", "zh": "社交，"}
+{"key": "rest,", "zh": "休息，"}
+{"key": "specific", "zh": "特定"}
+{"key": "duties.", "zh": "职责。"}
+{"key": "find", "zh": "寻找"}
+{"key": "way", "zh": "路"}
+{"key": "here.", "zh": "这里。"}
+{"key": "indicative", "zh": "表明"}
+{"key": "larger", "zh": "更大的"}
+{"key": "problems,", "zh": "问题，"}
+{"key": "pay", "zh": "给予"}
+{"key": "attention", "zh": "关注"}
+{"key": "them,", "zh": "他们，"}
+{"key": "affected", "zh": "受影响的"}
+{"key": "victims", "zh": "受害者"}
+{"key": "upset", "zh": "不安"}
+{"key": "crime", "zh": "犯罪"}
+{"key": "ignored.", "zh": "被忽视。"}
+{"key": "It's", "zh": "它是"}
+{"key": "convict.", "zh": "罪犯。"}
+{"key": "witness", "zh": "证人"}
+{"key": "information", "zh": "信息"}
+{"key": "presented", "zh": "已呈现"}
+{"key": "case.", "zh": "案件。"}
+{"key": "suspects.", "zh": "嫌疑人。"}
+{"key": "particularly", "zh": "尤其"}
+{"key": "important", "zh": "重要"}
+{"key": "story.", "zh": "故事。"}
+{"key": "recommended", "zh": "推荐"}
+{"key": "certain", "zh": "某些"}
+{"key": "assign", "zh": "分配"}
+{"key": "zone.", "zh": "区域。"}
+{"key": "Officers", "zh": "警官"}
+{"key": "opt", "zh": "选择"}
+{"key": "Main: Chop tress", "zh": "主菜单：砍树"}
+{"key": "Main: Gather plants", "zh": "主菜单：采集植物"}
+{"key": "Main: Buildings", "zh": "主菜单：建筑"}
+{"key": "Main: Stockpiles", "zh": "主菜单：堆料区"}
+{"key": "Main: Zones", "zh": "主菜单：区域"}
+{"key": "Main: Burrows", "zh": "主菜单：地下掩体"}
+{"key": "Main: Hauling", "zh": "主菜单：搬运"}
+{"key": "Main: Units", "zh": "主菜单：单位"}
+{"key": "Main: Tasks", "zh": "主菜单：任务"}
+{"key": "Main: Locations", "zh": "主菜单：地点"}
+{"key": "Main: Labor", "zh": "主菜单：劳工"}
+{"key": "Main: Work orders", "zh": "主菜单：工作订单"}
+{"key": "Main: Nobles", "zh": "主菜单：贵族"}
+{"key": "Main: Artifacts", "zh": "主菜单：神器"}
+{"key": "Main: Squads", "zh": "主菜单：小队"}
+{"key": "Mix dye", "zh": "调配染料"}
+{"key": "Metal clothing", "zh": "金属衣物"}
+{"key": "dye available", "zh": "染料可用"}
+{"key": "cloth/dye available", "zh": "布料/染料可用"}
+{"key": "Font size:", "zh": "字体大小："}
+{"key": "End of group", "zh": "组结束"}
+{"key": "End of macro", "zh": "宏结束"}
+{"key": "Could not copy file", "zh": "无法复制文件"}
+{"key": "File not found:", "zh": "找不到文件："}
+{"key": "Failed to copy", "zh": "复制失败"}
+{"key": "Command Line:", "zh": "命令行："}
+{"key": "stone boulders", "zh": "石头巨砾"}
+{"key": "small rock", "zh": "小岩石"}
+{"key": "kinds", "zh": "种类"}
+{"key": "see", "zh": "查看"}
+{"key": "panel", "zh": "面板"}
+{"key": "left.", "zh": "左侧。"}
+{"key": "like", "zh": "像"}
+{"key": "Unlike", "zh": "不像"}
+{"key": "multiple", "zh": "多个"}
+{"key": "overlap.", "zh": "重叠。"}
+{"key": "Certain", "zh": "某些"}
+{"key": "Bedrooms", "zh": "卧室"}
+{"key": "time.", "zh": "时间。"}
+{"key": "sure", "zh": "确保"}
+{"key": "correct", "zh": "正确"}
+{"key": "entries", "zh": "条目"}
+{"key": "separating", "zh": "分隔"}
+{"key": "physical", "zh": "肉体"}
+{"key": "punishment", "zh": "惩罚"}
+{"key": "cannot", "zh": "不能"}
+{"key": "carry", "zh": "执行"}
+{"key": "custodial", "zh": "监禁"}
+{"key": "sentences.", "zh": "刑罚。"}
+{"key": "16th Limestone", "zh": "石灰岩月16日"}
+{"key": "Histories of Jealousy and Toil", "zh": "嫉妒与劳作的历史"}
+{"key": "room", "zh": "房间"}
+{"key": "begin.", "zh": "开始。"}
+{"key": "Recenter on the deepest ", "zh": "重新居中于最深的"}
+{"key": "discovered area at this ", "zh": "发现区域在此"}
+{"key": "location.", "zh": "位置。"}
+{"key": "14th Limestone", "zh": "石灰岩14日"}
+{"key": "Finish setting traffic ", "zh": "完成设置交通"}
+{"key": "areas.", "zh": "区域。"}
+{"key": "15th Limestone", "zh": "石灰岩15日"}
+{"key": "Rakustumom", "zh": "拉库斯图莫姆"}
+{"key": "\"Tombdark\"", "zh": "\"墓暗\""}
+{"key": "Asmel Auburnseal's family heirloom", "zh": "阿斯梅尔·奥本西尔的家族传家宝"}
+{"key": "Avuzustir Kesham Zan", "zh": "阿武祖斯蒂尔·凯沙姆·赞"}
+{"key": "\"Minecrow the Curiosity of Artifacts\"", "zh": "\"矿鸦，神器奇珍\""}
+{"key": "Tholtig Earthenprairies's family heirloom", "zh": "托尔蒂格·埃森普雷里斯的家族传家宝"}
+{"key": "Tekkudthatthil Urthazthukkan", "zh": "特库德萨蒂尔 乌尔塔兹苏坎"}
+{"key": "\"Pickautumns the Brazen Amber\"", "zh": "\"采秋者 黄铜琥珀\""}
+{"key": "Belikud", "zh": "贝利库德"}
+{"key": "\"The Gray Reign\"", "zh": "\"灰色王朝\""}
+{"key": "òrdir Kashez", "zh": "奥迪尔 卡谢兹"}
+{"key": "\"The Incineration of Lessons\"", "zh": "\"焚化教训\""}
+{"key": "Remzuengo Môklongostong", "zh": "雷姆祖恩戈 莫克隆戈斯通"}
+{"key": "\"Routletters the Aching Web\"", "zh": "\"溃散信笺 疼痛之网\""}
+{"key": "Selenotung", "zh": "塞莱诺通"}
+{"key": "\"Tepidshocks\"", "zh": "\"温震\""}
+{"key": "Bëmbul Swordbegin's family heirloom", "zh": "本布尔·剑始的家传宝物"}
+{"key": "Intelligence", "zh": "情报"}
+{"key": "enforcement", "zh": "执法"}
+{"key": "crimes", "zh": "犯罪"}
+{"key": "reports,", "zh": "报告，"}

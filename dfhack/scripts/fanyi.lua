@@ -680,7 +680,8 @@ end
 -- 位置教训(2026-09-10): 默认右下 {x=-2,y=-2} 60x8 正好压住 embark 准备界面
 -- 的出发按钮(用户实锤被挡) → 改左下偏上左边缘。
 -- 2026-09-11 用户反馈字太小看不清 → 大字图集(scale=2, 每字 16x24 像素),
--- frame 42x5→64x10(视觉 5 行, 32 汉字/行); 存活 90s→15s 自动消失。
+-- frame 42x5→64x10; 又反馈框体太小显示不全(用户明确"框体更大也没关系,
+-- 只要能自动消失") → 96x14(视觉 7 行, 48 汉字/行), 存活 90s→15s。
 -- widget 不拦鼠标(focusable=false 默认), 遮挡仅限有字形的格子;
 -- 用户可用 `overlay reposition fanyi.subtitle` 自由拖位(持久化 overlay.json,
 -- 自调位置优先于 default_pos)。
@@ -688,10 +689,10 @@ end
 FanyiSubtitle = defclass(FanyiSubtitle, overlay.OverlayWidget)
 FanyiSubtitle.ATTRS = FanyiSubtitle.ATTRS or {}
 FanyiSubtitle.ATTRS.desc = 'DF-FanYi 中文译文悬浮(字幕条, fanyi overlays on cjk)'
-FanyiSubtitle.ATTRS.default_pos = {x = 0, y = -11}
+FanyiSubtitle.ATTRS.default_pos = {x = 0, y = -15}
 FanyiSubtitle.ATTRS.default_enabled = false
 FanyiSubtitle.ATTRS.viewscreens = 'all'
-FanyiSubtitle.ATTRS.frame = {w = 64, h = 10}
+FanyiSubtitle.ATTRS.frame = {w = 96, h = 14}
 
 function FanyiSubtitle:onRenderBody(dc)
     fanyi_paint_subtitle(dc, self.frame.w, self.frame.h)

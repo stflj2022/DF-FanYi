@@ -30,7 +30,7 @@ BATCH = 15
 WORKERS = 6
 MAX_TOKENS = 8000
 
-MARKUP_RE = re.compile(r"\[[^\[\]]{1,48}\]")
+MARKUP_RE = re.compile(r"\[(?:C:\d+:\d+:\d+|B|VAR:[A-Z_]+:[^\[\]]*|P:\d+(?::[A-Za-z_]+)*)\]")
 FMT_RE = re.compile(r"%[sdf]")
 
 SYSTEM = (

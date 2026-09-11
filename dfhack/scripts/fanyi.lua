@@ -53,9 +53,9 @@ S.config = S.config or {
     retry_frames = 90,      -- 重连起始间隔(帧), 指数退避 ×2 至 900
     max_send_per_tick = 3,  -- 每节拍最多发送的待发事件数
     -- 字幕条目存活期(ms): 过期清空, 避免"死字幕"常驻遮挡。
-    -- 2026-09-11 用户要求"几秒后自动消失不挡按钮": 90s→15s,
+    -- 2026-09-11 用户要求"几秒后自动消失不挡按钮": 90s→15s; 11:55 调至 40s 便于读完整句,
     -- 可用环境变量 FANYI_TTL_MS 覆盖(启动游戏前 export)。
-    render_ttl_ms = tonumber(os.getenv('FANYI_TTL_MS')) or 15000,
+    render_ttl_ms = tonumber(os.getenv('FANYI_TTL_MS')) or 40000,
 }
 local C = S.config
 
@@ -481,8 +481,23 @@ function fanyi_render_lines()
     return table.concat(parts, '\n')
 end
 
+-- 剥离 DF 颜色/格式标记([C:R:G:B]/[B]/[VAR:..]/[P:..]), 保留字面方括号文本
+-- (如 "[需要燃料]")。引擎提示词会“保留标记(markup)”, 但字幕条是纯文本
+-- 渲染, 标记需在换行/贴图前剥离, 否则屏幕显示 [C:7:0:1] 这类乱字(2026-09-11)。
+local DF_MARKUP_RE = '%[C:%d+:%d+:%d+%]'  -- [C:7:0:1]
+local function fanyi_strip_df_markup(text)
+    if not text or #text == 0 then return text end
+    -- 先剥颜色标记, 再剥剩余 [B]/[VAR:]/[P:] 格式(不匹配的字面方括号保留)
+    local t = text:gsub(DF_MARKUP_RE, '')
+    t = t:gsub('%[B%]', '')
+    t = t:gsub('%[VAR:[^%[%]]*%]', '')
+    t = t:gsub('%[P:%d+:[^%[%]]*%]', '')
+    return t
+end
+
 -- UTF-8 感知换行: 一段文本按字符数拆成 ≤max_cols 的行(优先在空格处断行)
 function fanyi_wrap_line(text, max_cols)
+    text = fanyi_strip_df_markup(text)
     local cps = fanyi_utf8_codepoints(text)
     if #cps <= max_cols then return {text} end
     local rows = {}
@@ -641,7 +656,7 @@ end
 -- 贴图绘制(纯逻辑, dc 由调用方注入; 返回绘制格数): 底部对齐逐字贴 texpos,
 -- 缺字形跳格(保持与源文同宽对齐); 只在渲染回调内被 overlay 框架调用。
 -- 2026-09-11 大字模式(scale=2): 每字贴 2x2 格(16x24 像素), 换行宽度减半;
--- 字幕存活 15s(FANYI_TTL_MS 可调), 过期自动消失不挡按钮。
+-- 字幕存活 40s(FANYI_TTL_MS 可调), 过期自动消失不挡按钮。
 function fanyi_paint_subtitle(dc, max_cols, max_rows)
     if not (S.overlays_on and S.render_cjk and S.font.installed) then return 0 end
     -- 字幕自然过期: 长时间无新译文 → 清空(避免"死字幕"常驻遮挡的观感)

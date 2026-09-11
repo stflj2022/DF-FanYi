@@ -29,6 +29,22 @@ from df_fanyi.config import REPO_ROOT, Config
 
 logger = logging.getLogger("df_fanyi.store")
 
+# ---- DF 颜色/格式标记剥离(2026-09-11) -------------------------------------
+# 矮人要塞字符串携带游戏渲染标记: [C:r:g:b] 颜色 / [B] 粗体 / [VAR:KEY:VAL]
+# / [P:n:TOKEN]。LLM 常把源文的标记原样带进译文(系统提示词“保留标记”
+# 本意只是保 {COUNT} 这类变量占位符)。字幕条/overlay 是纯文本渲染, 标记不
+# 剥离会直接显示成 [C:7:0:1] 乱字。字面方括号文本(如 [需要燃料])不受影响。
+import re as _re
+
+_DF_MARKUP_RE = _re.compile(r"\[(?:C:\d+:\d+:\d+|B|VAR:[^\[\]]*|P:\d+(?::[^\[\]]*)*)\]")
+
+
+def strip_df_markup(text: str | None) -> str | None:
+    """剥离 DF 颜色/格式标记, 保留字面方括号文本。None 原样回。"""
+    if not text:
+        return text
+    return _DF_MARKUP_RE.sub("", text)
+
 
 class JobStatus:
     """工程书 §42 job 状态。"""
@@ -268,7 +284,15 @@ class SQLiteStore:
         quality_score: float | None = None,
         confidence: float | None = None,
     ) -> None:
-        """写回译文: 新行 usage_count=1; 同 hash 更新译文/元数据但不重置计数(§38)。"""
+        """写回译文: 新行 usage_count=1; 同 hash 更新译文/元数据但不重置计数(§38)。
+
+        translated_text 落库前剥离 DF 颜色/格式标记([C:r:g:b]/[B]/[VAR:..]/
+        [P:..])—— LLM 常把源文的游戏标记原样带进译文(提示词“保留标记”
+        本意只是保 {COUNT} 变量), 字幕条是纯文本 overlay, 标记不剥离会
+        显示成 [C:7:0:1] 乱字(2026-09-11 实锤)。字面方括号(如 [需要燃料])
+        不受影响。
+        """
+        translated_text = strip_df_markup(translated_text)
         now = self._now()
         with self._lock:
             row = self._conn.execute(

@@ -604,13 +604,19 @@ function fanyi_font_load()
         end
         for i, cp in ipairs(page.cps) do
             if scale == 2 then
-                -- 大字模式: 每字占 2x2 格, 4 连续 texpos(TL,TR,BL,BR)
-                local base = (i - 1) * 4
+                -- 大字模式: 每字占 scale²=4 格(行优先 TL,TR,BL,BR), 与
+                -- generate_font_atlas.py 的网格布局严格对应 —— 生成端字 i(0基)
+                -- 起始 tile = i*2(每字占 2 列), 故读取端字 i(1基) 起始 tile =
+                -- (i-1)*2, 四片 = [t, t+1, t+cols, t+cols+1](BL/BR 换行下一行).
+                -- ⚠️ 曾误用 base=(i-1)*4 取连续 4 格, 导致每个汉字都贴成
+                -- 别的字形的 1/4 切片拼图 = 屏幕"乱码"(2026-09-11 已修).
+                local t = (i - 1) * 2
+                local cols = tonumber(page.cols) or index.cols or 64
                 by_cp[cp] = {
-                    tex.getTexposByHandle(handles[base + 1]) or 0,
-                    tex.getTexposByHandle(handles[base + 2]) or 0,
-                    tex.getTexposByHandle(handles[base + 3]) or 0,
-                    tex.getTexposByHandle(handles[base + 4]) or 0,
+                    tex.getTexposByHandle(handles[t + 1]) or 0,
+                    tex.getTexposByHandle(handles[t + 2]) or 0,
+                    tex.getTexposByHandle(handles[t + cols + 1]) or 0,
+                    tex.getTexposByHandle(handles[t + cols + 2]) or 0,
                 }
             else
                 by_cp[cp] = tex.getTexposByHandle(handles[i]) or 0

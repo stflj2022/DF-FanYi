@@ -784,7 +784,20 @@ FanyiSubtitle.ATTRS.desc = 'DF-FanYi 中文译文悬浮(字幕条, fanyi overlay
 FanyiSubtitle.ATTRS.default_pos = {x = 0, y = -15}
 FanyiSubtitle.ATTRS.default_enabled = false
 FanyiSubtitle.ATTRS.viewscreens = 'all'
+-- 固定大小(2026-09-11 用户要求): 字幕框占屏幕约 1/3 面积(宽 1/2 × 高 2/3),
+-- 行数固定不再随内容伸缩 —— 再长的字幕也能完整换行显示, 不会显示不全。
+-- 尺寸在 init 时按实际屏幕字符格数计算; overlay reposition 只改位置不动尺寸。
 FanyiSubtitle.ATTRS.frame = {w = 96, h = 14}
+
+function FanyiSubtitle:init()
+    local sw, sh = dfhack.screen.getWindowSize()
+    if sw and sh and sw > 0 and sh > 0 then
+        -- 宽取屏幕一半(字幕横排, 宽度充足减少换行), 高取 2/3(容纳更多行),
+        -- 面积 ≈ 1/3 屏幕; 受 scale 影响行高, 但以字符格计即可(渲染内部折算)。
+        self.frame.w = math.max(40, math.floor(sw * 0.5))
+        self.frame.h = math.max(8, math.floor(sh * 2 / 3))
+    end
+end
 
 function FanyiSubtitle:onRenderBody(dc)
     fanyi_paint_subtitle(dc, self.frame.w, self.frame.h)

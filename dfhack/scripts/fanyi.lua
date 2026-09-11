@@ -588,7 +588,14 @@ function fanyi_utf8_codepoints(s)
 end
 
 -- 装载字形图集(hack/data/fanyi-font/): index.json + loadTileset 注册纹理页。
--- 成功后 S.font.by_cp[codepoint]=texpos; 任何失败 → installed=false(门控静默原文)。
+-- 成功后 S.font.by_cp[codepoint]=TexposHandle(或 scale=1 单 handle); 任何失败
+-- → installed=false(门控静默原文)。
+-- ⚠️ 2026-09-11 重大修复: 必须存 handle, 贴图时实时 getTexposByHandle 解析。
+-- 原因: DFHack reserved 纹理缓冲仅 10000 格, 本图集 4页×4096格=16384格,
+-- 装不下的页静默落到 dynamic 范围; DF 每次**世界加载**会 reset_texpos() 清空
+-- dynamic 映射, 之后旧 texpos 数值指向重新分配后的别人家纹理 → 屏幕乱字/
+-- 微缩图(用户看到“字变小+胡言乱语”)。handle 是稳定引用, 实时解析后
+-- dynamic 纹理被 reset 后会自动重新注册(dfx Textures.cpp g_handle_to_surface 分支)。
 function fanyi_font_load()
     local tex = dfhack.textures
     if not (tex and tex.loadTileset and tex.getTexposByHandle) then
@@ -624,20 +631,19 @@ function fanyi_font_load()
                 -- 起始 tile = i*2(每字占 2 列), 故读取端字 i(1基) 起始 tile =
                 -- (i-1)*2, 四片 = [t, t+1, t+cols, t+cols+1](BL/BR 换行下一行).
                 -- ⚠️ 曾误用 base=(i-1)*4 取连续 4 格, 导致每个汉字都贴成
-                -- 别的字形的 1/4 切片拼图 = 屏幕"乱码"(2026-09-11 已修).
+                -- 别的字形的 1/4 切片拼图 = 屏幕“乱码”(2026-09-11 已修).
                 local t = (i - 1) * 2
                 local cols = tonumber(page.cols) or index.cols or 64
                 by_cp[cp] = {
-                    tex.getTexposByHandle(handles[t + 1]) or 0,
-                    tex.getTexposByHandle(handles[t + 2]) or 0,
-                    tex.getTexposByHandle(handles[t + cols + 1]) or 0,
-                    tex.getTexposByHandle(handles[t + cols + 2]) or 0,
+                    handles[t + 1], handles[t + 2],
+                    handles[t + cols + 1], handles[t + cols + 2],
                 }
             else
-                by_cp[cp] = tex.getTexposByHandle(handles[i]) or 0
+                by_cp[cp] = handles[i]
             end
         end
     end
+    S.font.tex = tex
     S.font.by_cp = by_cp
     S.font.tile_w = index.tile_w or 8
     S.font.tile_h = index.tile_h or 12
@@ -667,6 +673,8 @@ function fanyi_paint_subtitle(dc, max_cols, max_rows)
         end
     end
     local scale = S.font.scale or 1
+    local resolve = S.font.tex and S.font.tex.getTexposByHandle or nil
+    if not resolve then return 0 end  -- 无解析器(异常态)不贴, 防旧 texpos 乱贴
     local vis_rows = math.floor(max_rows / scale)              -- 视觉行数(大字模式行高加倍)
     local payload = fanyi_render_payload(vis_rows,
         math.floor(max_cols / scale))                           -- 换行宽度按字宽折算
@@ -678,17 +686,29 @@ function fanyi_paint_subtitle(dc, max_cols, max_rows)
         local row_y = base_row + (ri - 1) * scale
         for _, cp in ipairs(fanyi_utf8_codepoints(line.text)) do
             if x + scale > max_cols then break end
-            local tp = S.font.by_cp[cp]
-            if tp then
-                if scale == 2 and type(tp) == 'table' then
-                    dc:seek(x, row_y):tile(' ', tp[1])
-                    dc:seek(x + 1, row_y):tile(' ', tp[2])
-                    dc:seek(x, row_y + 1):tile(' ', tp[3])
-                    dc:seek(x + 1, row_y + 1):tile(' ', tp[4])
-                    painted = painted + 4
-                elseif type(tp) ~= 'table' and tp > 0 then
-                    dc:seek(x, row_y):tile(' ', tp)
-                    painted = painted + 1
+            local h = S.font.by_cp[cp]
+            if h then
+                if scale == 2 and type(h) == 'table' then
+                    -- 实时解析 texpos(见 fanyi_font_load 注释): 世界加载 reset 后
+                    -- dynamic 纹理自动重注册; tp<=0(loading 中/delayed)跳格不乱贴。
+                    local tp1 = resolve(h[1])
+                    local tp2 = resolve(h[2])
+                    local tp3 = resolve(h[3])
+                    local tp4 = resolve(h[4])
+                    if tp1 and tp1 > 0 and tp2 and tp2 > 0
+                        and tp3 and tp3 > 0 and tp4 and tp4 > 0 then
+                        dc:seek(x, row_y):tile(' ', tp1)
+                        dc:seek(x + 1, row_y):tile(' ', tp2)
+                        dc:seek(x, row_y + 1):tile(' ', tp3)
+                        dc:seek(x + 1, row_y + 1):tile(' ', tp4)
+                        painted = painted + 4
+                    end
+                elseif type(h) ~= 'table' then
+                    local tp = resolve(h)
+                    if tp and tp > 0 then
+                        dc:seek(x, row_y):tile(' ', tp)
+                        painted = painted + 1
+                    end
                 end
             end
             x = x + scale

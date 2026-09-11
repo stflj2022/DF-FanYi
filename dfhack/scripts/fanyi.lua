@@ -659,6 +659,37 @@ function fanyi_count_map(t)
     return n
 end
 
+-- 自动 texpos 诊断(2026-09-11): 启动时把关键字形 handle→texpos 数值写日志。
+-- Steam 启动无法在游戏内执行 painttest 命令, 故做成全自动: 用户重启游戏即可,
+-- 无需任何操作。读日志即可判定游戏内 texpos↔字形映射是否异常。
+-- 判读: 若某字形四片 texpos 连续/顺序(如 a,a+1,..) 说明行优先连续正常;
+-- 若 texpos 为 0/负数/跳变 → 纹理映射异常(乱字根因)。
+function fanyi_dump_texpos_diag(tag)
+    local ok, err = pcall(function()
+        local resolve = S.font.tex and S.font.tex.getTexposByHandle
+        if not resolve then
+            flog(('texpos_diag[%s]: 图集未装载或解析器不可用'):format(tag))
+            return
+        end
+        local probe = {33, 20154, 27700, 27704}  -- '!' 才 水 永 (分散不同页/格)
+        local parts = {}
+        for _, cp in ipairs(probe) do
+            local h = S.font.by_cp[cp]
+            if type(h) == 'table' then
+                local tp = {}
+                for _, hh in ipairs(h) do tp[#tp+1] = resolve(hh) end
+                parts[#parts+1] = ('U+%04X(四片)=%s'):format(cp, table.concat(tp, ','))
+            elseif h then
+                parts[#parts+1] = ('U+%04X=%d'):format(cp, resolve(h))
+            else
+                parts[#parts+1] = ('U+%04X=缺'):format(cp)
+            end
+        end
+        flog(('texpos_diag[%s]: %s'):format(tag, table.concat(parts, '; ')))
+    end)
+    if not ok then flog('texpos_diag 异常: ' .. tostring(err)) end
+end
+
 -- 贴图绘制(纯逻辑, dc 由调用方注入; 返回绘制格数): 底部对齐逐字贴 texpos,
 -- 缺字形跳格(保持与源文同宽对齐); 只在渲染回调内被 overlay 框架调用。
 -- 2026-09-11 大字模式(scale=2): 每字贴 2x2 格(16x24 像素), 换行宽度减半;
@@ -929,6 +960,7 @@ function fanyi_command(args)
         fanyi_install_state_hooks()
         arm_timer()
         flog('fanyi start (捕获: 公告+游戏日志+文本弹窗)')
+        fanyi_dump_texpos_diag('start')
         print('fanyi 捕获已启动(公告+游戏日志+文本弹窗); 引擎离线时静默显示原文')
     elseif cmd == 'stop' or cmd == 'disable' then
         if S.state ~= 'running' then print('未运行') return end

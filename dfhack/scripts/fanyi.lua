@@ -52,7 +52,10 @@ S.config = S.config or {
     tick_frames = 12,       -- 主轮询节拍(~0.2s@60fps)
     retry_frames = 90,      -- 重连起始间隔(帧), 指数退避 ×2 至 900
     max_send_per_tick = 3,  -- 每节拍最多发送的待发事件数
-    render_ttl_ms = 90000,  -- 字幕条目存活期(ms): 过期清空, 避免"死字幕"常驻
+    -- 字幕条目存活期(ms): 过期清空, 避免"死字幕"常驻遮挡。
+    -- 2026-09-11 用户要求"几秒后自动消失不挡按钮": 90s→15s,
+    -- 可用环境变量 FANYI_TTL_MS 覆盖(启动游戏前 export)。
+    render_ttl_ms = tonumber(os.getenv('FANYI_TTL_MS')) or 15000,
 }
 local C = S.config
 
@@ -76,7 +79,7 @@ S.readbuf = S.readbuf or ''       -- 行拆解缓冲(响应聚合)
 S.render_lines = S.render_lines or {}   -- 准备绘制的 {text, confidence, ts=now_ms}
 S.overlays_on = S.overlays_on or false
 S.render_cjk = S.render_cjk or false
-S.font = S.font or {installed = false, tile_w = 8, tile_h = 12, by_cp = {}}
+S.font = S.font or {installed = false, tile_w = 8, tile_h = 12, scale = 1, by_cp = {}}
 S.last_error = S.last_error or ''
 S.gamelog = S.gamelog or {enabled=true, path=nil}
 S.seen_tv_hashes = S.seen_tv_hashes or {}  -- textviewer 弹窗内容去重(哈希)
@@ -591,6 +594,7 @@ function fanyi_font_load()
         return false, 'index.json 解析失败'
     end
     local by_cp = {}
+    local scale = tonumber(index.scale) or 1
     for _, page in ipairs(index.pages) do
         local handles = tex.loadTileset(
             dir .. page.png, index.tile_w or 8, index.tile_h or 12, true)
@@ -599,12 +603,24 @@ function fanyi_font_load()
             return false, 'loadTileset 失败: ' .. tostring(page.png)
         end
         for i, cp in ipairs(page.cps) do
-            by_cp[cp] = tex.getTexposByHandle(handles[i]) or 0
+            if scale == 2 then
+                -- 大字模式: 每字占 2x2 格, 4 连续 texpos(TL,TR,BL,BR)
+                local base = (i - 1) * 4
+                by_cp[cp] = {
+                    tex.getTexposByHandle(handles[base + 1]) or 0,
+                    tex.getTexposByHandle(handles[base + 2]) or 0,
+                    tex.getTexposByHandle(handles[base + 3]) or 0,
+                    tex.getTexposByHandle(handles[base + 4]) or 0,
+                }
+            else
+                by_cp[cp] = tex.getTexposByHandle(handles[i]) or 0
+            end
         end
     end
     S.font.by_cp = by_cp
     S.font.tile_w = index.tile_w or 8
     S.font.tile_h = index.tile_h or 12
+    S.font.scale = scale
     S.font.installed = true
     return true
 end
@@ -618,6 +634,8 @@ end
 
 -- 贴图绘制(纯逻辑, dc 由调用方注入; 返回绘制格数): 底部对齐逐字贴 texpos,
 -- 缺字形跳格(保持与源文同宽对齐); 只在渲染回调内被 overlay 框架调用。
+-- 2026-09-11 大字模式(scale=2): 每字贴 2x2 格(16x24 像素), 换行宽度减半;
+-- 字幕存活 15s(FANYI_TTL_MS 可调), 过期自动消失不挡按钮。
 function fanyi_paint_subtitle(dc, max_cols, max_rows)
     if not (S.overlays_on and S.render_cjk and S.font.installed) then return 0 end
     -- 字幕自然过期: 长时间无新译文 → 清空(避免"死字幕"常驻遮挡的观感)
@@ -627,22 +645,32 @@ function fanyi_paint_subtitle(dc, max_cols, max_rows)
             table.remove(S.render_lines, i)
         end
     end
-    local payload = fanyi_render_payload(max_rows)
+    local scale = S.font.scale or 1
+    local vis_rows = math.floor(max_rows / scale)              -- 视觉行数(大字模式行高加倍)
+    local payload = fanyi_render_payload(vis_rows,
+        math.floor(max_cols / scale))                           -- 换行宽度按字宽折算
     if #payload == 0 then return 0 end
-    max_cols = max_cols or 42
-    max_rows = max_rows or 5
-    local base_row = max_rows - #payload  -- 底部对齐
+    local base_row = max_rows - #payload * scale  -- 底部对齐(含行高加倍)
     local painted = 0
     for ri, line in ipairs(payload) do
         local x = 0
+        local row_y = base_row + (ri - 1) * scale
         for _, cp in ipairs(fanyi_utf8_codepoints(line.text)) do
-            if x >= max_cols then break end
+            if x + scale > max_cols then break end
             local tp = S.font.by_cp[cp]
-            if tp and tp > 0 then
-                dc:seek(x, base_row + ri - 1):tile(' ', tp)
-                painted = painted + 1
+            if tp then
+                if scale == 2 and type(tp) == 'table' then
+                    dc:seek(x, row_y):tile(' ', tp[1])
+                    dc:seek(x + 1, row_y):tile(' ', tp[2])
+                    dc:seek(x, row_y + 1):tile(' ', tp[3])
+                    dc:seek(x + 1, row_y + 1):tile(' ', tp[4])
+                    painted = painted + 4
+                elseif type(tp) ~= 'table' and tp > 0 then
+                    dc:seek(x, row_y):tile(' ', tp)
+                    painted = painted + 1
+                end
             end
-            x = x + 1
+            x = x + scale
         end
     end
     return painted
@@ -650,7 +678,9 @@ end
 
 -- overlay 字幕条小部件(官方 overlay 插件)。
 -- 位置教训(2026-09-10): 默认右下 {x=-2,y=-2} 60x8 正好压住 embark 准备界面
--- 的出发按钮(用户实锤被挡) → 改左下偏上左边缘, 且缩到 42x5(21 汉字/行)。
+-- 的出发按钮(用户实锤被挡) → 改左下偏上左边缘。
+-- 2026-09-11 用户反馈字太小看不清 → 大字图集(scale=2, 每字 16x24 像素),
+-- frame 42x5→64x10(视觉 5 行, 32 汉字/行); 存活 90s→15s 自动消失。
 -- widget 不拦鼠标(focusable=false 默认), 遮挡仅限有字形的格子;
 -- 用户可用 `overlay reposition fanyi.subtitle` 自由拖位(持久化 overlay.json,
 -- 自调位置优先于 default_pos)。
@@ -658,10 +688,10 @@ end
 FanyiSubtitle = defclass(FanyiSubtitle, overlay.OverlayWidget)
 FanyiSubtitle.ATTRS = FanyiSubtitle.ATTRS or {}
 FanyiSubtitle.ATTRS.desc = 'DF-FanYi 中文译文悬浮(字幕条, fanyi overlays on cjk)'
-FanyiSubtitle.ATTRS.default_pos = {x = 0, y = -6}
+FanyiSubtitle.ATTRS.default_pos = {x = 0, y = -11}
 FanyiSubtitle.ATTRS.default_enabled = false
 FanyiSubtitle.ATTRS.viewscreens = 'all'
-FanyiSubtitle.ATTRS.frame = {w = 42, h = 5}
+FanyiSubtitle.ATTRS.frame = {w = 64, h = 10}
 
 function FanyiSubtitle:onRenderBody(dc)
     fanyi_paint_subtitle(dc, self.frame.w, self.frame.h)
@@ -881,7 +911,8 @@ function fanyi_command(args)
               'readbuf=', #S.readbuf, 'retry_after=', S.retry_after)
         print('displayed=', #S.render_lines, 'client=', S.client ~= nil, 'euid=', tostring(S.timer_euid))
         print('font: installed=', S.font.installed, 'tile=', S.font.tile_w .. 'x' .. S.font.tile_h,
-              'glyphs=', fanyi_count_map(S.font.by_cp))
+              'scale=', S.font.scale or 1, 'glyphs=', fanyi_count_map(S.font.by_cp),
+              'ttl_ms=', C.render_ttl_ms)
         local n_tv = 0
         for _ in pairs(S.seen_tv_hashes) do n_tv = n_tv + 1 end
         print('textviewer 去重:', n_tv, 'debuglog=', tostring(S.debug_log.path))

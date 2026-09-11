@@ -178,3 +178,25 @@ python3 scripts/merge-exe-strings.py --in dfint-data/live-translated-*.jsonl --w
 
 **遗留**：词典有 1080 个大小写不敏感重复键（HashMap 后写覆盖先写，无害未清）；
 simple-dictionary 有 "path."→空 等尾部清理条目（配合前缀模板设计，勿删）。
+
+## 十、2026-09-11 晚：字幕条大字化 + 物品描述批量根治 + 闭环首跑
+
+### 10.1 字幕条"字太小"根因与修复
+- **物理根因**：字幕条逐字贴图集字形，旧图集每字压进 8x12 tile（汉字有效笔画区仅 7x11px），物理上无法看清；dfint 的 CJK_FONT_SIZE=24 与字幕条无关（那是它自己往游戏字体图集塞字形的尺寸）。
+- **修复（大字图集 scale=2）**：`generate_font_atlas.py` 新增 `--scale 2`——每字光栅化 16x24、切 4 片（TL,TR,BL,BR）占 4 连续网格位（页宽 64 列被 4 整除保证不跨行）；`fanyi.lua` 按四 texpos 2x2 贴回，每字 16x24 像素。图集 4 页 3877 字形已重生成并部署游戏+仓库。
+- **配套调整**：frame 42x5→64x10（视觉仍 5 行、每行 32 汉字）、default_pos y=-11、overlay.json 里残留的旧位置 {x:-2,y:-2}（右下，挡按钮高危位）改为 {x:0,y:-11}。
+- **自动消失**：render_ttl_ms 90s→15s（用户"几秒后消失不挡按钮"），`FANYI_TTL_MS` 环境变量可覆盖；status 命令现打印 scale/ttl。
+
+### 10.2 "铜矛说明还是英文"根因与批量根治
+- **根因链**：物品 tooltip 说明句是**运行时拼接**（exe 内只有分段 `This is a `，武器名来自 entity 渲染）——静态抽取抽不到整串，词典精确匹配永远追不上组合；dfint Debug 日志铁证 `### "This is a copper spear.  "`（双尾空格，bt 走 addst）。
+- **修复**：`scripts/gen-item-desc-dict.py` 按**实测句式** `This is a {材质} {物品名}.  ` 做笛卡尔积（13 武器级金属 × 25 武器 + 3 弹药 = 364 键）→ translate（router，28s）→ merge 入典。**护甲/鞋类句式无样本未证实，暂不生成**——等 Debug 日志闭环确认句式后用同一脚本扩。
+- 词典 29344 → 29797 行；增量包 `dfint-data/legacy-extras-20260911.csv`。
+
+### 10.3 闭环首跑（本轮用户 Debug 日志 → 词典全链路）
+- collect 90 条（138 missing → 135 去重 → 过滤）→ translate 90/90 → 专名过滤（译文==原文 0 条）→ merge +90。
+- 首批入典样例：`This is a copper spear.  `→`这是一杆铜矛。`、`Histories of Gluttony and Enterprise`→`暴食与创业史`、`12th Limestone`→`石灰岩月12日`。
+
+### 验证清单（重启游戏后）
+1. 字幕条：字形明显变大（16x24），15 秒无新内容自动消失；`fanyi status` 显示 scale=2
+2. 悬停任意金属武器/弹药：说明句整句中文（钢/银/精金/铜×矛/战斧/短剑/弩箭…全覆盖）
+3. 主菜单串（World name / Three saves 等）+ 字幕条中文

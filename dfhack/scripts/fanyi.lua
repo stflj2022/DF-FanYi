@@ -665,6 +665,46 @@ end
 -- 字幕存活 40s(FANYI_TTL_MS 可调), 过期自动消失不挡按钮。
 function fanyi_paint_subtitle(dc, max_cols, max_rows)
     if not (S.overlays_on and S.render_cjk and S.font.installed) then return 0 end
+    local scale = S.font.scale or 1
+    local resolve = S.font.tex and S.font.tex.getTexposByHandle or nil
+    if not resolve then return 0 end  -- 无解析器(异常态)不贴, 防旧 texpos 乱贴
+    -- scale=2 贴四片辅助(scale=1 贴单片); 返回 true=至少贴了一格
+    local function scale2tile(dc, h, x, y)
+        if not h then return false end
+        if scale == 2 and type(h) == 'table' then
+            -- 实时解析 texpos(见 fanyi_font_load 注释): 世界加载 reset 后
+            -- dynamic 纹理自动重注册; tp<=0(loading 中/delayed)跳格不乱贴。
+            local tp1 = resolve(h[1])
+            local tp2 = resolve(h[2])
+            local tp3 = resolve(h[3])
+            local tp4 = resolve(h[4])
+            if tp1 and tp1 > 0 and tp2 and tp2 > 0
+                and tp3 and tp3 > 0 and tp4 and tp4 > 0 then
+                dc:seek(x, y):tile(' ', tp1)
+                dc:seek(x + 1, y):tile(' ', tp2)
+                dc:seek(x, y + 1):tile(' ', tp3)
+                dc:seek(x + 1, y + 1):tile(' ', tp4)
+                return true
+            end
+            return false
+        elseif type(h) ~= 'table' then
+            local tp = resolve(h)
+            if tp and tp > 0 then
+                dc:seek(x, y):tile(' ', tp)
+                return true
+            end
+        end
+        return false
+    end
+    -- painttest 诊断模式: 贴固定测试字串(永水人才出汆), 验证游戏内映射
+    if S.painttest_until and os.clock() < S.painttest_until then
+        local x = 1
+        for _, cp in ipairs(fanyi_utf8_codepoints('永水人才出汆')) do
+            scale2tile(dc, S.font.by_cp[cp], x, max_rows - 2)
+            x = x + 2
+        end
+        return x
+    end
     -- 字幕自然过期: 长时间无新译文 → 清空(避免"死字幕"常驻遮挡的观感)
     local now = now_ms()
     for i = #S.render_lines, 1, -1 do
@@ -672,9 +712,6 @@ function fanyi_paint_subtitle(dc, max_cols, max_rows)
             table.remove(S.render_lines, i)
         end
     end
-    local scale = S.font.scale or 1
-    local resolve = S.font.tex and S.font.tex.getTexposByHandle or nil
-    if not resolve then return 0 end  -- 无解析器(异常态)不贴, 防旧 texpos 乱贴
     local vis_rows = math.floor(max_rows / scale)              -- 视觉行数(大字模式行高加倍)
     local payload = fanyi_render_payload(vis_rows,
         math.floor(max_cols / scale))                           -- 换行宽度按字宽折算
@@ -687,30 +724,7 @@ function fanyi_paint_subtitle(dc, max_cols, max_rows)
         for _, cp in ipairs(fanyi_utf8_codepoints(line.text)) do
             if x + scale > max_cols then break end
             local h = S.font.by_cp[cp]
-            if h then
-                if scale == 2 and type(h) == 'table' then
-                    -- 实时解析 texpos(见 fanyi_font_load 注释): 世界加载 reset 后
-                    -- dynamic 纹理自动重注册; tp<=0(loading 中/delayed)跳格不乱贴。
-                    local tp1 = resolve(h[1])
-                    local tp2 = resolve(h[2])
-                    local tp3 = resolve(h[3])
-                    local tp4 = resolve(h[4])
-                    if tp1 and tp1 > 0 and tp2 and tp2 > 0
-                        and tp3 and tp3 > 0 and tp4 and tp4 > 0 then
-                        dc:seek(x, row_y):tile(' ', tp1)
-                        dc:seek(x + 1, row_y):tile(' ', tp2)
-                        dc:seek(x, row_y + 1):tile(' ', tp3)
-                        dc:seek(x + 1, row_y + 1):tile(' ', tp4)
-                        painted = painted + 4
-                    end
-                elseif type(h) ~= 'table' then
-                    local tp = resolve(h)
-                    if tp and tp > 0 then
-                        dc:seek(x, row_y):tile(' ', tp)
-                        painted = painted + 1
-                    end
-                end
-            end
+            if scale2tile(dc, h, x, row_y) then painted = painted + (scale == 2 and 4 or 1) end
             x = x + scale
         end
     end
@@ -888,6 +902,24 @@ function fanyi_command(args)
     local cmd = args[1] or 'status'
     if cmd == 'status' then
         for _, l in ipairs(fanyi_status_lines()) do print(l) end
+    elseif cmd == 'painttest' then
+        -- 诊断: 直接贴互不形近的固定字符串, 验证游戏内 texpos↔字形映射。
+        -- 预期屏幕显示: 永水人才出汆 (若显示别的字 = 映射/顺序错)
+        if not (S.font.installed and S.font.tex) then print('字形图集未装载, 先 fanyi overlays on cjk') return end
+        S.painttest_until = os.clock() + 20  -- 显示 20 秒
+        local resolve = S.font.tex.getTexposByHandle
+        local probe = {}
+        for _, cp in ipairs({27704, 27700, 20154, 25165, 20986, 27766}) do  -- 永水人才出汆
+            local h = S.font.by_cp[cp]
+            probe[#probe+1] = (h and resolve(h) or -1)
+        end
+        local h1 = S.font.by_cp[33]   -- '!' page0 idx1 → 四片格 2,3,66,67
+        local seq = {}
+        if type(h1) == 'table' then
+            for _, hh in ipairs(h1) do seq[#seq+1] = resolve(hh) end
+        end
+        flog(('painttest: 测试字texpos=%s; 句柄!(四片)=%s'):format(table.concat(probe, ','), table.concat(seq, ',')))
+        print('painttest 已开启 20s(预期屏幕: 永水人才出汆); texpos 样本已写 fanyi-debug.log')
     elseif cmd == 'start' or cmd == 'enable' then
         if S.state == 'running' then print('已在运行') return end
         S.state = 'running'

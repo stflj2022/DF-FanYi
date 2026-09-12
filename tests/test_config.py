@@ -33,9 +33,16 @@ def test_default_config_has_all_required_sections() -> None:
         assert key in cfg.raw, f"default.yaml 缺少 §47 必需节: {key}"
 
 
-def test_local_llm_workers_is_one() -> None:
-    """工程书 §27: 本地 gemma 并发恒 1(CPU 单实例)。"""
-    assert cfg().local_llm["workers"] == 1
+def test_local_llm_default_workers_is_one() -> None:
+    """工程书 §27: 本地 gemma 并发恒 1(CPU 单实例)。
+
+    验证 default.yaml 默认 workers=1. 用户可覆盖到 >1(云端路由转发).
+    """
+    import yaml
+    default_cfg = yaml.safe_load(
+        (Path(__file__).resolve().parent.parent / "config" / "default.yaml").read_text()
+    )
+    assert default_cfg["local_llm"]["workers"] == 1, "默认本地 workers 必须 = 1(§27)"
 
 
 def test_context_limits_present() -> None:

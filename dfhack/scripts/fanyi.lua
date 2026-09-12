@@ -1102,66 +1102,40 @@ end
 -- F12 关闭: 状态清空, 浮窗消失
 
 -- 屏幕字符读取(gps.screen[y][x], 1-based; 滤颜色码/控制符, 仅保留可打印 + 空格)
--- 读一行屏上文本(0 基 y)。用 dfhack.screen.readTile 而非 gps.screen:
+-- 读矩形区域文本: 用 dfhack.screen.readTile 而非 gps.screen:
 -- DF50 gps.screen 是 3 层字节数组(ch/fg/bg/bold), Lua 侧无法按"字符表"索引;
 -- readTile(x, y, true) penetrate_ui=true 可穿透 DFHack overlay 读到游戏原生文本
 -- (否则会读到我们自己的中文 overlay, 翻译已译文本无意义)。
-local function fanyi_ms_read_row(y)
-    y = tonumber(y)
-    if not y or y < 0 then return '' end
-    local dimx = tonumber(df.global.gps.dimx) or 0
-    if dimx <= 0 then return '' end
-    local out, last_space = {}, true
-    for x = 0, dimx - 1 do
-        local ch = ' '
-        pcall(function()
-            local t = dfhack.screen.readTile(x, y, true)
-            local code = tonumber(t and t.ch) or 0
-            if code > 0 then
-                ch = string.char(code % 256)
-                if ch:match('%c') then ch = ' ' end
-            end
-        end)
-        if ch == ' ' then
-            if not last_space then out[#out+1] = ' '; last_space = true end
-        else
-            out[#out+1] = ch; last_space = false
-        end
-    end
-    -- 去掉首尾空格
-    while #out > 0 and out[#out] == ' ' do out[#out] = nil end
-    local i = 1
-    while i < #out and out[i] == ' ' do i = i + 1 end
-    return table.concat(out, '', i)
-end
-
--- 在指定 y 坐标上下扩展找 “句子”(连续非空格行), 返回拼接文本 + 高度
-local function fanyi_ms_read_segment(y)
-    y = tonumber(y) or 0
-    local dimy = tonumber(df.global.gps.dimy) or 0
-    if dimy <= 0 then return '', 0 end
-    if y < 0 then y = 0 end
-    if y >= dimy then y = dimy - 1 end
-    -- 上扩
-    local top = y
-    while top > 0 do
-        local s = fanyi_ms_read_row(top - 1)
-        if s == '' then break end
-        top = top - 1
-    end
-    -- 下扩
-    local bot = y
-    while bot < dimy - 1 do
-        local s = fanyi_ms_read_row(bot + 1)
-        if s == '' then break end
-        bot = bot + 1
-    end
+-- 读矩形区域内文本(x1<=x2, y1<=y2, 0 基)。严格只收可打印 ASCII(0x20-0x7E):
+-- DF50 地图区是图形精灵渲染, readTile 返回的 ch 是精灵索引/任意码,
+-- 不过滤会拼出乱码。非文本区自然读出空串。
+local function fanyi_ms_read_rect(x1, y1, x2, y2)
     local rows = {}
-    for yy = top, bot do rows[#rows+1] = fanyi_ms_read_row(yy) end
-    return table.concat(rows, ' '), bot - top + 1
+    for y = y1, y2 do
+        local chars, last_space = {}, true
+        for x = x1, x2 do
+            local code = 0
+            pcall(function()
+                local t = dfhack.screen.readTile(x, y, true)
+                code = tonumber(t and t.ch) or 0
+            end)
+            local ch = ' '
+            if code >= 32 and code <= 126 then ch = string.char(code) end
+            if ch == ' ' then
+                if not last_space then chars[#chars+1] = ' '; last_space = true end
+            else
+                chars[#chars+1] = ch; last_space = false
+            end
+        end
+        while #chars > 0 and chars[#chars] == ' ' do chars[#chars] = nil end
+        local i = 1
+        while i <= #chars and chars[i] == ' ' do i = i + 1 end
+        local line = table.concat(chars, '', i)
+        if line ~= '' then rows[#rows+1] = line end
+    end
+    return table.concat(rows, ' ')
 end
-
--- F11 命令: 读取鼠标位置所在段, 发起 inline 翻译, 打开浮窗
+-- F11 命令: 进入框选模式(不再立即翻译; 拖框释放后读选区文本)
 function fanyi_mouseselect_cmd()
     if not S.engine_online then
         -- 退路: 状态仍点亮浮窗, 让用户看到离线提示
@@ -1169,29 +1143,29 @@ function fanyi_mouseselect_cmd()
                 event_id=nil, rows={'[离线] 翻译引擎未连接'}, rect=nil, started=dfhack.getTickCount()}
         return
     end
-    -- 屏幕坐标鼠标位置: dfhack.screen.getMousePos() 返回 x,y(0 基)。
-    -- ⚠️ 不要用 dfhack.gui.getMousePos — 那是地图瓦片坐标(仅地图区有效)。
-    local mx, my = -1, -1
-    pcall(function() mx, my = dfhack.screen.getMousePos() end)
-    mx, my = tonumber(mx) or -1, tonumber(my) or -1
-    if my < 0 then
-        S.ms = {visible=true, text='', translation='[未检测到鼠标] 请把鼠标移到游戏画面内再按 F11。',
-                event_id=nil, rows={'[未检测到鼠标]'}, rect=nil, started=dfhack.getTickCount()}
-        return
-    end
-    local seg, nlines = fanyi_ms_read_segment(my)
-    seg = seg or ''
-    -- trim 长度(全角较多也限 256)
+    S.ms = {visible=true, selecting=true, drag=nil,
+            text='', translation='', event_id=nil,
+            rows={'拖框选择要翻译的文本', '右键或 F12 取消'},
+            rect=nil, started=dfhack.getTickCount()}
+end
+
+-- 框选释放: 读选区文本并发起 inline 翻译(由 MouseSelect:onRenderFrame 帧驱动调用)
+function fanyi_ms_select_rect(x1, y1, x2, y2)
+    local seg = fanyi_ms_read_rect(x1, y1, x2, y2)
     if #seg > 256 then seg = seg:sub(1, 256) end
     if seg == '' or #seg < 2 then
-        S.ms = {visible=true, text='', translation='[无文本可翻译]',
-                event_id=nil, rows={'[无文本可翻译]', '鼠标位置: '..my..' 行'}, rect=nil, started=dfhack.getTickCount()}
+        S.ms.selecting = false
+        S.ms.drag = nil
+        S.ms.visible = true
+        S.ms.rows = {'[无文本可翻译]', '选区内没有可识别的英文(地图区是图形无文本)'}
         return
     end
     local event_id = 'ms-'..tostring(dfhack.getTickCount())
     local payload = json.encode({jsonrpc='2.0', id=event_id, method='inline_translate',
         params={text=seg, context='mouse_select', title='', event_id=event_id}})
     local ok = S.client and send_line(S.client, payload)
+    S.ms.selecting = false
+    S.ms.drag = nil
     if not ok then
         S.ms = {visible=true, text=seg, translation='[发送失败] 翻译请求未送出, 可能是断线重连中。',
                 event_id=nil, rows={seg, '[发送失败]'}, rect=nil, started=dfhack.getTickCount()}
@@ -1204,9 +1178,11 @@ function fanyi_mouseselect_cmd()
     S.ms_pending[event_id] = seg
 end
 
--- F12 命令: 关闭浮窗
+-- F12 命令: 关闭浮窗并取消框选
 function fanyi_mousedismiss_cmd()
     S.ms.visible = false
+    S.ms.selecting = false
+    S.ms.drag = nil
     S.ms.text = ''
     S.ms.translation = ''
     S.ms.event_id = nil
@@ -1266,12 +1242,18 @@ local function fanyi_paint_mouseselect(dc, max_cols, max_rows)
     -- 边框(简单 fg=white 占位)
     pcall(function() dc:pen(7, 0):seek(rect.x, rect.y):string(string.rep('-', rect.w)) end)
     pcall(function() dc:pen(7, 0):seek(rect.x, rect.y + rect.h - 1):string(string.rep('-', rect.w)) end)
-    -- 内容行
-    for i, line in ipairs(rows) do
-        local yy = rect.y + i
-        if yy >= rect.y + rect.h - 1 then break end
-        local s = line:sub(1, rect.w - 2)
-        pcall(function() dc:pen(7, 0):seek(rect.x + 1, yy):string(s) end)
+    -- 内容行: 中文必须走 CJK 字形图集(paint_cjk_rows),
+    -- 直接 dc:string 是 CP437 字体画不了 CJK → 乱码(2026-09-12 实机确认)
+    local inner = {x = rect.x + 1, y = rect.y + 1, w = rect.w - 2, h = rect.h - 2}
+    local painted = paint_cjk_rows(dc, rows, inner)
+    if painted == 0 then
+        -- 图集未装时的兜底(纯 ASCII 场景)
+        for i, line in ipairs(rows) do
+            local yy = rect.y + i
+            if yy >= rect.y + rect.h - 1 then break end
+            local s = line:sub(1, rect.w - 2)
+            pcall(function() dc:pen(7, 0):seek(rect.x + 1, yy):string(s) end)
+        end
     end
     S.ms.rect = rect
     return rect.h
@@ -1279,12 +1261,70 @@ end
 
 MouseSelect = defclass(MouseSelect, overlay.OverlayWidget)
 MouseSelect.ATTRS = MouseSelect.ATTRS or {}
-MouseSelect.ATTRS.desc = 'DF-FanYi 屏上选词翻译(F11 触发, 浮窗驻留)'
+MouseSelect.ATTRS.desc = 'DF-FanYi 屏上框选翻译(F11 框选, F12 关闭)'
 MouseSelect.ATTRS.default_pos = {x = 0, y = 0}
 MouseSelect.ATTRS.default_enabled = true
 MouseSelect.ATTRS.viewscreens = {'dwarfmode', 'dungeonmode', 'default', 'adventur',
     'adventur_interact', 'textviewer', 'title'}
 MouseSelect.ATTRS.frame = {l = 0, t = 0, r = 0, b = 0}
+
+-- 框选状态机(帧驱动, 不走 onInput):
+-- DFHack 无 _MOUSE_L_UP 事件, 释放检测靠 enabler.mouse_lbut 状态跳变(1→0)。
+-- 每帧: 选择模式+按下→锚定; 拖动→更新终点+反色高亮; 释放→读选区发起翻译。
+local function fanyi_ms_selection_tick()
+    if not S.ms or not S.ms.selecting then return end
+    local mx, my = -1, -1
+    pcall(function() mx, my = dfhack.screen.getMousePos() end)
+    mx, my = tonumber(mx) or -1, tonumber(my) or -1
+    local lbut = tonumber(df.global.enabler and df.global.enabler.mouse_lbut) or 0
+    local rbut = tonumber(df.global.enabler and df.global.enabler.mouse_rbut) or 0
+    if rbut > 0 then
+        -- 右键取消
+        S.ms.selecting, S.ms.drag, S.ms.visible = false, nil, false
+        S.ms.rows = {}
+        return
+    end
+    if S.ms.drag then
+        if mx >= 0 then S.ms.drag.x2, S.ms.drag.y2 = mx, my end
+        if lbut == 0 then
+            local d = S.ms.drag
+            S.ms.drag = nil
+            local x1, x2 = math.min(d.x1, d.x2), math.max(d.x1, d.x2)
+            local y1, y2 = math.min(d.y1, d.y2), math.max(d.y1, d.y2)
+            pcall(fanyi_ms_select_rect, x1, y1, x2, y2)
+        end
+    elseif lbut > 0 and mx >= 0 then
+        S.ms.drag = {x1 = mx, y1 = my, x2 = mx, y2 = my}
+    end
+end
+
+-- 拖框实时反色高亮(逐格 swap fg/bg, 视觉与 DF 原生选区一致)
+local function fanyi_ms_paint_drag(dc)
+    if not S.ms or not S.ms.drag then return end
+    local d = S.ms.drag
+    local x1, x2 = math.min(d.x1, d.x2), math.max(d.x1, d.x2)
+    local y1, y2 = math.min(d.y1, d.y2), math.max(d.y1, d.y2)
+    for y = y1, y2 do
+        for x = x1, x2 do
+            pcall(function()
+                local t = dfhack.screen.readTile(x, y, false)
+                if t then
+                    dfhack.screen.paintTile({ch = t.ch, fg = t.bg, bg = t.fg}, x, y)
+                end
+            end)
+        end
+    end
+end
+
+function MouseSelect:onInput(keys)
+    -- 框选模式中吞掉鼠标事件, 防止拖框误触游戏 UI/其他 DFHack widget
+    if not S.ms or not S.ms.selecting then return false end
+    if keys._MOUSE_L or keys._MOUSE_L_DOWN or keys._MOUSE_R or keys._MOUSE_R_DOWN
+        or keys._MOUSE_M or keys._MOUSE_M_DOWN then
+        return true
+    end
+    return false
+end
 
 function MouseSelect:onRenderFrame(dc, arg2, arg3)
     local cols, rows = 80, 25
@@ -1293,6 +1333,8 @@ function MouseSelect:onRenderFrame(dc, arg2, arg3)
     elseif type(arg2) == 'number' then
         cols, rows = arg2, (type(arg3) == 'number' and arg3 or 25)
     end
+    fanyi_ms_selection_tick()
+    fanyi_ms_paint_drag(dc)
     return fanyi_paint_mouseselect(dc, cols, rows)
 end
 

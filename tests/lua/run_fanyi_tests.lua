@@ -224,59 +224,108 @@ elseif scenario == 'paragraph_window' then
     print('done count=' .. tostring(M.state().stats.done))
 
 elseif scenario == 'mouseselect' then
-    -- ticket-017: F11 选词 → 调 inline_translate → fetch_done 填译文 → 渲染浮窗
+    -- ticket-017 v2: F11 框选模式 → 拖框释放读选区 → inline_translate → 浮窗
     M.set_version('53.06', '53.06-r1')
     M.engine_up = true
     M.load({'start'}, {})
     M.step(20)  -- 让连接建立起来, S.engine_online=true
     assert_eq(M.state().engine_online, true, 'engine online after step')
-    local st = M.state()
-    -- 1. mouseselect 命令在 fanyi_command 中, 验证可调用且点亮 ms 状态
+    local enabler = M.env.df.global.enabler
+    local dc = {n = 0, pen = function(s, fg, bg) return s end,
+                seek = function(s, x, y) return s end,
+                string = function(s, _) s.n = s.n + 1; return s end,
+                tile = function(s, _, _) return s end}
+    local MouseSelect = M.env.MouseSelect
+    assert(MouseSelect, 'MouseSelect widget 已注册到 env')
+
+    -- 1. F11 → 进入框选模式(浮窗显示操作提示, 尚未发翻译)
     M.set_screen({
         {' ', ' ', ' ', ' ', ' '},
         {' ', ' ', ' ', ' ', ' '},
         {' ', ' ', ' ', ' ', ' '},
         {' ', ' ', ' ', ' ', ' '},
-        {' ', 'T', 'h', 'e', ' ', 'g', 'o', 'b', 'l', 'i', 'n', ' ', 's', 'm', 'e', 'l', 'l', 's', ' ', 'f', 'e', 'a', 'r', '.'},
+        {' ', 'T', 'h', 'e', ' ', 'g', 'o', 'b', 'l', 'i', 'n', ' ', 's', 'm', 'e', 'l', 'l', 's', ' ', 'f', 'e', 'a', 'r', '.', ' '},
     })
-    M.mouse_y = 4   -- 0 基屏幕坐标 → fixture 第 5 行(goblin 行)
+    local st0
     M.load({'mouseselect'}, {})
-    st = M.state()
-    assert_eq(st.ms.visible, true, 'ms.visible = true after F11')
-    assert_match(st.ms.text, 'goblin', 'ms.text 含选中行 "goblin"')
-    -- 2. 验证发出过 inline_translate
+    st0 = M.state()
+    assert_eq(st0.ms.visible, true, 'F11 后浮窗可见(操作提示)')
+    assert_eq(st0.ms.selecting, true, 'F11 后 selecting=true')
+    assert_match(st0.ms.rows[1], '拖框', '提示行含 拖框')
+    local sent0 = 0
+    for _, line in ipairs(M.sent_lines or {}) do
+        if line:find('inline_translate') then sent0 = sent0 + 1 end
+    end
+    assert_eq(sent0, 0, '框选前不应发 inline_translate')
+
+    -- 2. 按下左键 → render 锚定拖框
+    M.mouse_x, M.mouse_y = 1, 3   -- 0 基, fixture 第 4 行
+    enabler.mouse_lbut = 1
+    MouseSelect:onRenderFrame(dc, 80, 25)
+    local drag = M.state().ms.drag
+    assert(drag, '按下后 drag 已锚定')
+    assert_eq(drag.x1, 1, 'drag.x1=1')
+    assert_eq(drag.y1, 3, 'drag.y1=3')
+
+    -- 3. 移动鼠标 → render 扩展拖框
+    M.mouse_x, M.mouse_y = 23, 4
+    MouseSelect:onRenderFrame(dc, 80, 25)
+    drag = M.state().ms.drag
+    assert(drag, '拖动中 drag 仍在')
+    assert_eq(drag.x2, 23, 'drag.x2=23')
+    assert_eq(drag.y2, 4, 'drag.y2=4')
+
+    -- 4. 松开左键 → render 触发选区读取 + 发送 inline_translate
+    enabler.mouse_lbut = 0
+    MouseSelect:onRenderFrame(dc, 80, 25)
+    local st = M.state()
+    assert_eq(st.ms.drag, nil, '释放后 drag=nil')
+    assert_match(st.ms.text, 'goblin', 'ms.text 含选区文本 "goblin"')
     local sent_count = 0
     for _, line in ipairs(M.sent_lines or {}) do
         if line:find('inline_translate') then sent_count = sent_count + 1 end
     end
     assert(sent_count >= 1, '应发送 inline_translate, got ' .. tostring(sent_count))
-    -- 3. 模拟 fetch_done 回调填译文
+
+    -- 5. 模拟 fetch_done 回调填译文
     M.engine_auto_respond('地精散发出恐惧的气息。', 0.95)
-    M.step(40)  -- 让 fanyi.lua 读到响应并填 ms.translation
+    M.step(40)
     st = M.state()
     assert_eq(st.ms.translation, '地精散发出恐惧的气息。', 'ms.translation 已填入')
-    assert(#st.ms.rows > 1, 'ms.rows 多行(原文+译文+关闭提示), got ' .. tostring(#st.ms.rows))
-    -- 4. 渲染浮窗
-    local dc = {n = 0, pen = function(s, fg, bg) s._fg, s._bg = fg, bg; return s end,
-                seek = function(s, x, y) s._x, s._y = x, y; return s end,
-                string = function(s, _) s.n = s.n + 1; return s end,
-                tile = function(s, _, _) return s end}
-    local MouseSelect = M.env.MouseSelect
-    assert(MouseSelect, 'MouseSelect widget 已注册到 env')
+    assert(#st.ms.rows > 1, 'ms.rows 多行, got ' .. tostring(#st.ms.rows))
+    -- 6. 渲染浮窗(中文走 paint_cjk_rows; 测试无图集走 dc:string 兜底)
+    dc.n = 0
     local h = MouseSelect:onRenderFrame(dc, 80, 25)
     assert(h >= 1, 'onRenderFrame 返回 > 0, got: ' .. tostring(h))
-    assert(dc.n > 0, 'dc.string 被调用 ' .. tostring(dc.n) .. ' 次')
-    -- 5. F12 关闭
+    assert(dc.n > 0, 'dc 绘制被调用 ' .. tostring(dc.n) .. ' 次')
+
+    -- 7. F12 关闭
     M.load({'mousedismiss'}, {})
     st = M.state()
     assert_eq(st.ms.visible, false, 'F12 后 ms.visible = false')
-    -- 6. 空文本场景
-    M.set_screen({{' '}, {' '}, {' '}, {' '}, {' '}})
-    M.mouse_y = 5
+    assert_eq(st.ms.selecting, false, 'F12 后 selecting = false')
+
+    -- 8. 右键取消框选模式
     M.load({'mouseselect'}, {})
+    enabler.mouse_lbut, enabler.mouse_rbut = 0, 1
+    MouseSelect:onRenderFrame(dc, 80, 25)
     st = M.state()
-    assert_eq(st.ms.visible, true, '空文本也显示提示浮窗')
-    assert_match(st.ms.rows[1], '无文本可翻译', '空文本提示正确')
+    assert_eq(st.ms.visible, false, '右键后浮窗关闭')
+    assert_eq(st.ms.selecting, false, '右键后 selecting=false')
+    enabler.mouse_rbut = 0
+
+    -- 9. 空选区(全空格屏) → 提示无文本
+    M.set_screen({{' '}, {' '}, {' '}, {' '}, {' '}})
+    M.mouse_x, M.mouse_y = 0, 0
+    M.load({'mouseselect'}, {})
+    enabler.mouse_lbut = 1
+    MouseSelect:onRenderFrame(dc, 80, 25)
+    M.mouse_x, M.mouse_y = 1, 1
+    enabler.mouse_lbut = 0
+    MouseSelect:onRenderFrame(dc, 80, 25)
+    st = M.state()
+    assert_eq(st.ms.visible, true, '空选区也显示提示浮窗')
+    assert_match(st.ms.rows[1], '无文本可翻译', '空选区提示正确')
 
 else
     error('unknown scenario: ' .. scenario)

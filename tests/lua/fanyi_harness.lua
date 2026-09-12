@@ -350,7 +350,7 @@ env.dfhack.screen = {
         if M.mouse_offscreen then return nil end
         return M.mouse_x or 5, M.mouse_y or 4
     end,
-    -- readTile(x, y, penetrate_ui): 返回 {ch=CP437 码}
+    -- readTile(x, y, penetrate_ui): 返回 {ch=CP437 码}; 精灵区返回不可打印码
     readTile = function(x, y, penetrate)
         local row = M.screen_buffer[y + 1]
         if not row then return nil end
@@ -358,6 +358,7 @@ env.dfhack.screen = {
         if type(ch) ~= 'string' or #ch == 0 then ch = ' ' end
         return {ch = string.byte(ch), fg = 7, bg = 0}
     end,
+    paintTile = function() end,  -- 拖框反色(测试中空操作)
 }
 env.dfhack_flags = {}
 env.df = {
@@ -395,6 +396,8 @@ end
 env.df.global = env.df.global or {}
 setmetatable(env.df, {__newindex = function(_, k, v) rawset(_, k, v) end})
 env.df.global.gps = env.df.global.gps or {}
+-- 框选状态机读 enabler.mouse_lbut/mouse_rbut(帧驱动释放检测)
+env.df.global.enabler = env.df.global.enabler or {mouse_lbut = 0, mouse_rbut = 0}
 setmetatable(env.df.global.gps, {__newindex = function(_, k, v) rawset(_, k, v) end})
 env.df.global.gps.dimx = 19
 env.df.global.gps.dimy = 6

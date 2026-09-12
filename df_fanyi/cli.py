@@ -213,6 +213,7 @@ def _cmd_translate(args: argparse.Namespace) -> int:
 def _cmd_shot(args: argparse.Namespace) -> int:
     """截图翻译: OCR→段落→管线; 输出人读格式/JSON/仅中文。"""
     from df_fanyi.shot import (
+        _translate_combined,
         assemble_paragraphs,
         load_zh_corpus,
         ocr_image,
@@ -237,7 +238,17 @@ def _cmd_shot(args: argparse.Namespace) -> int:
             print("未识别到英文文本", file=sys.stderr)
         return 1
 
-    results = translate_paragraphs(paragraphs, lambda: build_orchestrator(cfg))
+    # 2026-09-12: 默认走“合并多段→一次 LLM 调用”(词汇一致 + 1 次往返)。
+    # 超长 / 拆分错 → 回退原并行(词汇可能漂移但不会丢段)。
+    orch_factory = lambda: build_orchestrator(cfg)
+    try:
+        from df_fanyi.providers.router_client import RouterChatClient
+        combined_client = RouterChatClient()
+    except Exception:
+        combined_client = None
+    results = _translate_combined(paragraphs, client=combined_client)
+    if results is None:
+        results = translate_paragraphs(paragraphs, orch_factory)
     if args.save_md:
         from datetime import datetime
 

@@ -13,6 +13,9 @@ if str(REPO) not in sys.path:
 from df_fanyi.cli import build_parser
 from df_fanyi.shot import (
     OcrWord,
+    _COMBINED_TAG_RE,
+    _split_combined_response,
+    _translate_combined,
     assemble_paragraphs,
     collapse_cjk_spaces,
     merge_dual_ocr,
@@ -395,3 +398,63 @@ class TestRenderMarkdown:
         ]
         md = render_markdown(results, "/tmp/y.png", timestamp="t")
         assert "错误: provider 不可用" in md
+
+
+class TestCombinedTranslation:
+    """多段合并调用(2026-09-12): 一次 LLM 调用送所有段落, 返 N 段保证词汇一致。"""
+
+    def test_split_response_perfect(self):
+        """模型完美保留 N 个标签 → 拆出 N 段。"""
+        text = (
+            "<¶¶¶PARA=1¶¶¶>\n第一段译文。\n\n"
+            "<¶¶¶PARA=2¶¶¶>\n第二段译文。\n\n"
+            "<¶¶¶PARA=3¶¶¶>\n第三段译文。"
+        )
+        out = _split_combined_response(text, 3)
+        assert out == ["第一段译文。", "第二段译文。", "第三段译文。"]
+
+    def test_split_response_with_extra_text(self):
+        """模型在标签间加了额外说明 → 正确拆出。"""
+        text = (
+            "<¶¶¶PARA=1¶¶¶>\n甲\n\n"
+            "<¶¶¶PARA=2¶¶¶>\n乙\n\n"
+            "<¶¶¶PARA=3¶¶¶>\n丙"
+        )
+        out = _split_combined_response(text, 3)
+        assert out == ["甲", "乙", "丙"]
+
+    def test_split_response_missing_tag_returns_none(self):
+        """模型遗漏某个标签 → 拆分错返 None(调用方回退并行)。"""
+        text = (
+            "<¶¶¶PARA=1¶¶¶>\n甲\n\n"
+            "<¶¶¶PARA=3¶¶¶>\n丙"
+        )
+        assert _split_combined_response(text, 3) is None
+
+    def test_split_response_no_tags_returns_none(self):
+        """无标签结构 → 拆分错。"""
+        assert _split_combined_response("甲\n乙\n丙", 3) is None
+
+    def test_split_response_out_of_range_tag_ignored(self):
+        """越界标签(如 N=99)忽略。"""
+        text = (
+            "<¶¶¶PARA=1¶¶¶>\n甲\n\n"
+            "<¶¶¶PARA=2¶¶¶>\n乙\n\n"
+            "<¶¶¶PARA=99¶¶¶>\n噪声"
+        )
+        out = _split_combined_response(text, 2)
+        assert out == ["甲", "乙"]
+
+    def test_tag_regex_matches(self):
+        assert _COMBINED_TAG_RE.findall("<¶¶¶PARA=5¶¶¶>") == ["5"]
+        assert _COMBINED_TAG_RE.findall("a<¶¶¶PARA=12¶¶¶>b<¶¶¶PARA=3¶¶¶>") == ["12", "3"]
+
+    def test_translate_combined_short_circuits_empty(self):
+        """空段落列表返空列表(不调 LLM)。"""
+        assert _translate_combined([]) == []
+
+    def test_translate_combined_too_long_returns_none(self):
+        """超长输入返 None(调用方走并行)。"""
+        long_paragraph = "a " * 1000
+        paragraphs = [long_paragraph] * 5  # 5000 chars > 3500 limit
+        assert _translate_combined(paragraphs) is None

@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import logging
 import os
 import re
 import subprocess
@@ -15,6 +16,8 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger("df_fanyi.shot")
 
 __all__ = [
     "OcrWord",
@@ -460,6 +463,133 @@ def process_image(image_path: str, orch: Any, *, zh_bigrams: set[str] | None = N
     return translate_paragraphs(
         assemble_paragraphs(ocr_image(image_path, zh_bigrams=zh_bigrams)), orch
     )
+
+
+# 2026-09-12: 合并多段为单次 LLM 调用的硬性约束。
+# 用户报"一句一句翻译"不连贯——根因是每段独立上下文, 词汇漂移(Tracks/铁路/轨道混用)。
+# 合并调用让 LLM 在同一上下文决定术语, 1 次往返而非 N 次。
+# 用**编号标签** <¶¶¶PARA=N¶¶¶> 包裹每段, 模型能逐个对照翻译,
+# 拆分时按标签正则抽取, 严格保证 N 段对齐。
+_COMBINED_TAG_RE = re.compile(r"<¶¶¶PARA=(\d+)¶¶¶>")
+_COMBINED_MAX_CHARS = 3500  # 超过则回退并行(避免单次 LLM 超 max_tokens)
+_COMBINED_OVERHEAD_PER_PARA = 60  # 每段分隔符 + 行尾开销估计
+_COMBINED_SYSTEM_PROMPT_ADDON = """\n\n【多段合并调用特殊指令】
+输入格式: {n} 段**互相独立**的提示文本, 每段前有 `<¶¶¶PARA=N¶¶¶>` 标签 (N=1 到 {n})。
+请**逐段**翻译, 要求:
+  1. 严格输出 {n} 段(不多不少), 每段用同样的 `<¶¶¶PARA=N¶¶¶>` 标签包裹
+  2. 段内中英混排时翻译英文部分, 与原中文拼接, 保留专有名词和变量占位符
+  3. 只输出译文本体 + 标签, 不要任何说明/前缀/尾注
+
+示例 (2 段):
+输入:
+<¶¶¶PARA=1¶¶¶>
+Tracks are convenient.
+<¶¶¶PARA=2¶¶¶>
+Stops have friction.
+
+输出:
+<¶¶¶PARA=1¶¶¶>
+轨道很便捷。
+<¶¶¶PARA=2¶¶¶>
+停站点有摩擦力。
+"""
+
+
+def _split_combined_response(text: str, n: int) -> list[str] | None:
+    """按 `<¶¶¶PARA=N¶¶¶>` 标签切分, 期望得到 n 个非空部分(标签按 N 升序)。
+
+    模型遗漏某个标签 → 补空串占位(提示拆分错)。
+    返回 None = 拆分失败 → 调用方回退并行。
+    """
+    matches = list(_COMBINED_TAG_RE.finditer(text))
+    if not matches:
+        return None
+    # 按标签抽段: 标签 N 到 下一标签之间是该段译文
+    parts: list[str | None] = [None] * (n + 1)  # index 0 不用
+    for i, m in enumerate(matches):
+        n_tag = int(m.group(1))
+        if not (1 <= n_tag <= n):
+            continue  # 越界标签忽略
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        body = text[start:end].strip()
+        if parts[n_tag] is None or len(body) > len(parts[n_tag] or ""):
+            parts[n_tag] = body
+    out = [p for p in parts[1:] if p is not None]
+    if len(out) != n:
+        return None
+    return out
+
+
+def _translate_combined(
+    paragraphs: list[str],
+    *,
+    client: Any = None,
+) -> list[dict[str, Any]] | None:
+    """合并多段为单次 LLM 调用。
+
+    返回 None 表示合并失败(超长/网络/拆分错)→ 调用方回退到 translate_paragraphs。
+    返回 N 个结果字典时与 paragraphs 一一对应。
+    """
+    if not paragraphs:
+        return []
+    n = len(paragraphs)
+    # 用编号标签包裹每段: <¶¶¶PARA=1¶¶¶>\n段1\n\n<¶¶¶PARA=2¶¶¶>\n段2...
+    parts_combined = []
+    for i, p in enumerate(paragraphs, 1):
+        parts_combined.append(f"<¶¶¶PARA={i}¶¶¶>\n{p}")
+    combined = "\n\n".join(parts_combined)
+    if len(combined) + _COMBINED_OVERHEAD_PER_PARA * n > _COMBINED_MAX_CHARS:
+        return None  # 超长, 走并行
+
+    # 加载主系统提示词并叠加多段指令
+    from df_fanyi.providers.router_client import (
+        TRANSLATION_SYSTEM_PROMPT,
+        load_system_prompt,
+    )
+    base_prompt = load_system_prompt("v1") or TRANSLATION_SYSTEM_PROMPT
+    system = base_prompt + _COMBINED_SYSTEM_PROMPT_ADDON.format(n=n)
+
+    # 直接调云端 router, 跳过编排器缓存/词典/规则(它们只对单段有效, 合并文本不可信)
+    from df_fanyi.providers.router_client import RouterChatClient, RouterError
+
+    if client is None:
+        client = RouterChatClient()
+    try:
+        # 2026-09-12 fix: 关掉 minimax-M3 的思考机制。
+        # 合并调用需要 max_tokens 都给译文用, 思考占满会被路由器判空返空。
+        result = client.chat(
+            combined,
+            system=system,
+            temperature=0.2,
+            max_tokens=min(4096, 200 * n + 400),
+            enable_thinking=False,
+        )
+    except RouterError as exc:
+        logger.warning("合并翻译失败, 回退并行: %s", exc)
+        return None
+    if not result.content:
+        return None
+
+    zh_parts = _split_combined_response(result.content, n)
+    if zh_parts is None:
+        logger.warning(
+            "合并响应拆分错(期望 %d 段): %s",
+            n, result.content[:200],
+        )
+        return None
+
+    out: list[dict[str, Any]] = []
+    for en, zh in zip(paragraphs, zh_parts):
+        out.append({
+            "en": collapse_cjk_spaces(en),
+            "zh": collapse_cjk_spaces(zh),
+            "model": result.model or "",
+            "provider": result.provider or "",
+            "confidence": 0.9,
+            "error": None,
+        })
+    return out
 
 
 def render_markdown(

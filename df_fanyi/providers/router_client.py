@@ -114,9 +114,14 @@ class RouterChatClient:
         temperature: float = 0.3,
         max_tokens: int = 2048,
         stream: bool = False,
+        enable_thinking: bool | None = None,
     ) -> dict[str, Any]:
-        """构造 /v1/chat/completions 请求体(OpenAI 格式)。"""
-        return {
+        """构造 /v1/chat/completions 请求体(OpenAI 格式)。
+
+        enable_thinking=False: 关 minimax-M3 的思考机制 — 合并多段 / 清单类调用
+        必关(否则思考占满 max_tokens, 译文 token 为 0 被路由器判空返空)。
+        """
+        payload: dict[str, Any] = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system},
@@ -126,6 +131,10 @@ class RouterChatClient:
             "max_tokens": max_tokens,
             "stream": stream,
         }
+        if enable_thinking is False:
+            # minimax-M3 / M2 系列专有参数: 关掉 chat_template 的 think 块
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
+        return payload
 
     def chat(self, text: str, **options: Any) -> ChatResult:
         """调用云端翻译一句, 返回解析结果(content 去 reasoning)。"""

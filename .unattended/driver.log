@@ -453,3 +453,10 @@ ticket-015 完成,commit `6d9de85`,407/407 全绿。
 [2026-09-12 09:52:28] === ROUND 2 ===
 [2026-09-12 09:52:28] Provider: pi-primary
 [2026-09-12 09:52:28] Starting AI agent...
+<think>All tickets 001-016 are now done. No pending tickets. According to the user's instructions:
+> 若无可做工单,只输出一行等待原因,禁止修改任何代码禁止提交
+
+So I should output one line waiting reason and not modify anything.</think>
+
+ticket-016 已完成并推送 (commit 570defa)。所有工单 001-016 已 done，无 pending 工单可做。等待 SPEC-012 玩家手动重启游戏完成 B/C 项 E2E 验证, 或新指令/新工单输入。
+[2026-09-12 09:55:42] ✅ Round completed successfully

@@ -61,6 +61,9 @@ S.config = S.config or {
     -- ticket-014: 公告译文缓存 TTL(90s; 工单§3 过期后 overlay 不再显示,
     -- 原文自然显示, 避免翻译永远挂在面板上)
     ann_ttl_ms = tonumber(os.getenv('FANYI_ANN_TTL_MS')) or 90000,
+    -- ticket-015 §1: 段落聚合窗口。同 hash 在 50ms 内合并为单次 push_event;
+    -- 50ms 后允许再次推送(给玩家重新看同一页的余地)。
+    paragraph_window_ms = tonumber(os.getenv('FANYI_PARAGRAPH_WINDOW_MS')) or 50,
 }
 local C = S.config
 
@@ -86,6 +89,7 @@ S.readbuf = S.readbuf or ''       -- 行拆解缓冲(响应聚合)
 S.last_error = S.last_error or ''
 S.gamelog = S.gamelog or {enabled=true, path=nil}
 S.seen_tv_hashes = S.seen_tv_hashes or {}  -- textviewer 弹窗内容去重(哈希)
+S.tv_last_push_ts = S.tv_last_push_ts or {}  -- ticket-015 §1: 段落聚合窗口时间戳
 -- ticket-013: textviewer 内嵌翻译覆盖层状态
 S.tv_cache = S.tv_cache or {}        -- event_id → {text, ts, title}(译文缓存)
 S.tv_meta = S.tv_meta or {}          -- event_id → title(捕获时记录)
@@ -296,13 +300,24 @@ local function capture_textviewer()
             end)
             if ok_b and full and #full >= 10 then
                 local h = fnv1a(full)
-                if not S.seen_tv_hashes[h] then
+                local now = now_ms()
+                -- ticket-015 §1: 50ms 段落聚合窗口. 同一 hash 在 50ms 内多次出现合并为单次 push
+                -- (防视图高频重绘/页面快速切换重复 push_event). 50ms 后允许再次推送,
+                -- 但跳过永久去重 seen_tv_hashes 抑制刷新重看(仍依赖 long_term 缓存)。
+                local last_ts = S.tv_last_push_ts[h] or 0
+                if not S.seen_tv_hashes[h] or (now - last_ts) > C.paragraph_window_ms then
                     S.seen_tv_hashes[h] = true
+                    S.tv_last_push_ts[h] = now
                     -- 有界: 哈希表膨胀时丢弃一半
                     local keys = {}
                     for k in pairs(S.seen_tv_hashes) do keys[#keys + 1] = k end
                     if #keys > 512 then
                         for j = 1, #keys - 256 do S.seen_tv_hashes[keys[j]] = nil end
+                    end
+                    local ts_keys = {}
+                    for k in pairs(S.tv_last_push_ts) do ts_keys[#ts_keys + 1] = k end
+                    if #ts_keys > 512 then
+                        for j = 1, #ts_keys - 256 do S.tv_last_push_ts[ts_keys[j]] = nil end
                     end
                     S.tv_meta['tv-' .. h] = title or ''  -- ticket-013: 译文缓存元数据
                     flog(('捕获textviewer: %d字符 hash=%s'):format(#full, h:sub(1, 10)))

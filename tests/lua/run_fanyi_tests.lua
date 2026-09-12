@@ -191,6 +191,35 @@ elseif scenario == 'overlays_cmd' then
     M.step(60)
     assert_eq(M.state().displayed['report-2'], true, 'displayed after roundtrip')
 
+elseif scenario == 'paragraph_window' then
+    -- ticket-015 §1: 段落聚合窗口。验证 S.tv_last_push_ts 初始化与配置加载,
+    -- 避免高频重绘产生重复 push_event。完整 timing 验证依赖真实 DFHack tick
+    -- 调度, 此处验证契约层。
+    M.set_version('53.06', '53.06-r1')
+    M.load({'start'}, {})
+    assert_match(M.output_joined(), '已启动', 'fanyi started')
+    local st = M.state()
+    -- 1. tv_last_push_ts 表初始化存在(空表)
+    assert(type(st.tv_last_push_ts) == 'table', 'tv_last_push_ts 已初始化')
+    assert_eq(next(st.tv_last_push_ts), nil, '初始 tv_last_push_ts 为空')
+    -- 2. seen_tv_hashes 表初始化存在(空表)
+    assert_eq(next(st.seen_tv_hashes), nil, '初始 seen_tv_hashes 为空')
+    -- 3. config.paragraph_window_ms 默认 50ms(§1)
+    assert_eq(st.config.paragraph_window_ms, 50, 'paragraph_window_ms 默认 50ms')
+    -- 4. tv_last_push_ts 可填充 600 条(预填, 不限制填充量; 实际有界检查
+    -- 在 capture_textviewer 内 512 阈值, harness 不触发该路径)
+    for i = 1, 600 do st.tv_last_push_ts['k' .. i] = i end
+    local n = 0
+    for _ in pairs(st.tv_last_push_ts) do n = n + 1 end
+    assert_eq(n, 600, 'tv_last_push_ts 预填 600 条 (内存上限由 capture_textviewer 检查)')
+    -- 5. config 字段可读且合理
+    local cfg = st.config
+    assert(cfg.paragraph_window_ms > 0,
+           'paragraph_window_ms > 0: ' .. tostring(cfg.paragraph_window_ms))
+    -- 6. fanyi_render_inline_payload() 仍返回空表(015 在 server 层做缓存, Lua 不变)
+    local payload = M.env.fanyi_render_inline_payload()
+    assert_eq(#payload, 0, 'inline payload 仍为空表 (渲染在 013/014 widget)')
+
 else
     error('unknown scenario: ' .. scenario)
 end

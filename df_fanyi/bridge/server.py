@@ -34,16 +34,22 @@ from df_fanyi.bridge.protocol import (
     normalize_event,
     priority_from_event,
 )
+from df_fanyi.bridge.inline_cache import ParagraphCache
 from df_fanyi.core.parser import normalize_text
 
 logger = logging.getLogger("df_fanyi.bridge.server")
 
-_METHODS = ("translate", "fetch_done", "inline_translate", "health", "version")
+_METHODS = ("translate", "fetch_done", "inline_translate", "paragraph_translate", "health", "version")
 
 # inline_translate(ticket-013): textviewer 内嵌覆盖层的段落级缓存上限与文本上限。
 # SQLite 持久化段落缓存属 ticket-015, 本层只做进程内有界 LRU。
 _INLINE_CACHE_CAPACITY = 256
 _INLINE_MAX_TEXT = 20_000
+
+# ticket-015 paragraph_translate: 跨进程持久化段落缓存的文本上限(与 inline_translate 一致)。
+_PARAGRAPH_MAX_TEXT = 20_000
+# ticket-015: 启动预热最多加载条数(ParagraphCache 默认 1000, 沿用其内部 capacity)。
+_PARAGRAPH_WARMUP = 1000
 
 
 class _ResultsBuffer:
@@ -97,6 +103,7 @@ class BridgeServer:
         protocol_version: int = PROTOCOL_VERSION,
         results_capacity: int = 1024,
         results_ttl_s: float = 300.0,
+        paragraph_cache: ParagraphCache | None = None,
     ) -> None:
         if transport not in ("tcp", "unix"):
             raise ValueError(f"transport 非法: {transport!r}(支持 tcp/unix)")
@@ -115,6 +122,10 @@ class BridgeServer:
         # ticket-013 inline_translate: 段落缓存(cache_key → 译记录) + 在途登记
         self._inline_cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._inline_wait: dict[str, str] = {}  # source_text → cache_key(异步完成后回填)
+        # ticket-015: 跨进程持久化段落缓存(SQLite + 进程内 LRU); 缺省提供内存-only fallback
+        # 以保持 ticket-008 的现有调用形态不破坏。
+        self.paragraph_cache: ParagraphCache | None = paragraph_cache
+        self._paragraph_wait: dict[str, str] = {}  # source_text → key(异步完成后回填)
         self._stats = {"translated": 0, "completed": 0, "failed": 0}
         self._running = False
         self._started_at = 0.0
@@ -126,6 +137,13 @@ class BridgeServer:
         # §25 完成/失败事件 → 结果缓冲(worker 线程执行, 本类只入队, 快)
         scheduler.subscribe_done(self._on_done)
         scheduler.subscribe_failed(self._on_failed)
+        # ticket-015: 启动预热最近 1000 条到 LRU(仅当 paragraph_cache 提供时)。
+        if self.paragraph_cache is not None:
+            try:
+                self.paragraph_cache.load_top(limit=_PARAGRAPH_WARMUP)
+                logger.info("段落缓存预热: %d 条", len(self.paragraph_cache))
+            except Exception as exc:  # noqa: BLE001 — 预热失败不影响桥启动
+                logger.warning("段落缓存预热失败: %s", exc)
 
     # ---- 生命周期 ---------------------------------------------------------
 
@@ -284,6 +302,8 @@ class BridgeServer:
             return self._on_fetch_done(params)
         if method == "inline_translate":
             return self._on_inline_translate(params)
+        if method == "paragraph_translate":
+            return self._on_paragraph_translate(params)
         if method == "health":
             return self._on_health(params)
         if method == "version":
@@ -365,6 +385,9 @@ class BridgeServer:
 
         游戏侧重开同一 textviewer 页时命中缓存秒回, 不再触发 LLM(预算铁律)。
         异步完成由 _on_done 回填 _inline_wait 登记的 cache_key, 下次命中。
+
+        ticket-015: 进程内 LRU miss 后, fallback 到 paragraph_cache(SQLite 持久层),
+        跨重启命中 → cached=true, 不调 LLM。
         """
         text = params.get("text")
         if not isinstance(text, str) or not text.strip():
@@ -390,6 +413,31 @@ class BridgeServer:
                 "provider": cached["provider"],
                 "error": "",
             }
+
+        # ticket-015: 进程内 LRU miss → paragraph_cache(SQLite)命中则秒回,
+        # 并写回 LRU(给同进程后续调用加速)。
+        if self.paragraph_cache is not None:
+            p_key = ParagraphCache.hash_text(text)
+            p_rec = self.paragraph_cache.get(p_key)
+            if p_rec is not None:
+                self._inline_cache_put(key, {
+                    "translated_text": p_rec["translated_text"],
+                    "confidence": p_rec["confidence"],
+                    "model": p_rec["model"],
+                    "provider": p_rec["provider"],
+                })
+                self._stats["translated"] += 1
+                return {
+                    "status": "done",
+                    "cached": True,
+                    "event_id": event_id,
+                    "source_text": text,
+                    "translated_text": p_rec["translated_text"],
+                    "confidence": p_rec["confidence"],
+                    "model": p_rec["model"],
+                    "provider": p_rec["provider"],
+                    "error": "",
+                }
 
         submission = self.scheduler.submit(
             text,
@@ -433,6 +481,7 @@ class BridgeServer:
         }
 
     def _on_health(self, params: dict[str, Any]) -> dict[str, Any]:
+        pc_size = len(self.paragraph_cache) if self.paragraph_cache is not None else 0
         return {
             "engine": "ok",
             "version": self.version,
@@ -446,7 +495,87 @@ class BridgeServer:
             "stats": {
                 "translated": self._stats["translated"],
                 "results_pending": len(self._results),
+                "paragraph_cache_size": pc_size,
             },
+            "methods": list(_METHODS),
+        }
+
+    # ---- paragraph_translate(ticket-015): 跨进程持久化段落缓存路由 --------
+
+    def _on_paragraph_translate(self, params: dict[str, Any]) -> dict[str, Any]:
+        """跨进程段落级缓存: 命中即回(cached=true); 未命中提交调度器 LLM → 写回。
+
+        与 013 inline_translate 的区别:
+        - 缓存键仅由 normalize(text) 派生(与 context 无关), 跨 context 复用;
+        - 持久层是 SQLite(ParagraphCache), 重启不丢失;
+        - 与 inline_translate 是并行路由: 013 走 inline:{context}:{title} 复合键,
+          015 走 paragraph:{hash} 全局键; 二者共享 ParagraphCache 持久层。
+        """
+        if self.paragraph_cache is None:
+            raise RPCError(-32601, "paragraph_translate 未启用(paragraph_cache 未配置)")
+        text = params.get("text")
+        if not isinstance(text, str) or not text.strip():
+            raise RPCError(-32602, "params.text 必须为非空字符串")
+        if len(text) > _PARAGRAPH_MAX_TEXT:
+            raise RPCError(-32602, f"params.text 过长(>{_PARAGRAPH_MAX_TEXT} 字符)")
+        context = str(params.get("context") or "")
+        event_id = str(params.get("event_id") or "")
+        key = ParagraphCache.hash_text(text)
+
+        cached = self.paragraph_cache.get(key)
+        if cached is not None:
+            self._stats["translated"] += 1
+            return {
+                "status": "done",
+                "cached": True,
+                "event_id": event_id,
+                "source_text": text,
+                "translated_text": cached["translated_text"],
+                "confidence": cached["confidence"],
+                "model": cached["model"],
+                "provider": cached["provider"],
+                "error": "",
+            }
+
+        submission = self.scheduler.submit(
+            text,
+            priority=priority_from_event(80),
+            context={"screen": context or "paragraph", "context_id": f"paragraph:{key}",
+                     "text_type": "LONG_SENTENCE", "game_version": ""},
+        )
+        if submission.is_async:
+            with self._lock:
+                self._paragraph_wait[normalize_text(text)] = key
+            self._stats["translated"] += 1
+            return {
+                "status": "queued",
+                "cached": False,
+                "event_id": event_id,
+                "source_text": text,
+                "translated_text": text,
+                "confidence": 0.0,
+                "model": "",
+                "provider": "",
+            }
+        result = submission.result
+        self.paragraph_cache.put(
+            key,
+            result.text,
+            confidence=result.confidence,
+            model=result.model,
+            provider=result.provider,
+            context=context,
+        )
+        return {
+            "status": "done",
+            "cached": False,
+            "event_id": event_id,
+            "source_text": text,
+            "translated_text": result.text,
+            "confidence": result.confidence,
+            "model": result.model,
+            "provider": result.provider,
+            "error": result.error,
         }
 
     # ---- 调度器完成/失败事件 → 结果缓冲 -----------------------------------
@@ -465,6 +594,7 @@ class BridgeServer:
         self._stats["completed"] += 1
         with self._lock:
             inline_key = self._inline_wait.pop(job.source_text, None)
+            paragraph_key = self._paragraph_wait.pop(job.source_text, None)
         if inline_key is not None:  # ticket-013: inline 异步完成 → 回填段落缓存
             self._inline_cache_put(inline_key, {
                 "translated_text": result.text,
@@ -472,6 +602,16 @@ class BridgeServer:
                 "model": result.model,
                 "provider": result.provider,
             })
+        if paragraph_key is not None and self.paragraph_cache is not None:
+            # ticket-015: paragraph_translate 异步完成 → 写 paragraph_cache(SQLite 持久)
+            self.paragraph_cache.put(
+                paragraph_key,
+                result.text,
+                confidence=result.confidence,
+                model=result.model,
+                provider=result.provider,
+                context=str((job.context or {}).get("screen", "") or ""),
+            )
         self._results.put(
             {
                 "event_id": self._pop_event_id(job.source_text),

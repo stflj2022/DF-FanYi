@@ -92,3 +92,15 @@
 [2026-09-12 09:30:54] Provider: pi-primary
 [2026-09-12 09:30:54] Starting AI agent...
 [2026-09-12 09:40:54] ✅ Round completed successfully
+[2026-09-12 09:40:58] ✅ Pushed to GitHub
+[2026-09-12 09:40:58] Round complete, waiting 30s...
+[2026-09-12 09:41:12] === UNATTENDED DRIVER STARTED v1.2.0 ===
+[2026-09-12 09:41:12] Project: DF-FanYi
+[2026-09-12 09:41:12] Providers: 1 configured
+[2026-09-12 09:41:12] Test command: python3 -m pytest tests/ -q
+[2026-09-12 09:41:12] Mode: (LIVE)
+[2026-09-12 09:41:12] Platform: Linux
+[2026-09-12 09:41:12] Timeout: 7200 s | Zero-output fuse: 900 s
+[2026-09-12 09:41:12] === ROUND 1 ===
+[2026-09-12 09:41:12] Provider: pi-primary
+[2026-09-12 09:41:12] Starting AI agent...

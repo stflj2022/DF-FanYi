@@ -24,6 +24,7 @@ SCENARIOS = [
     "reconnect",
     "gamelog_history",
     "overlays_cmd",
+    "paragraph_window",  # ticket-015 §1
 ]
 
 

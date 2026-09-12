@@ -10,7 +10,12 @@ docs/audits/DFHACK_INTEGRATION.md)还是 unix socket, 帧格式一致:
 - fetch_done()                → 排空自上次轮询以来完成的译文(全同缓存队列);
 - inline_translate(text,      → ticket-013: 段落级缓存路由(键 inline:{context}:{title}:
   context, title, event_id)     {text_hash}); 命中即回(cached=true), 未命中提交调度器
-                                (同步 done / 异步 queued, 完成后回填缓存);
+                                (同步 done / 异步 queued, 完成后回填缓存)。
+                                ticket-015: 进程内 LRU miss 后 fallback 到
+                                paragraph_cache(SQLite 持久层), 跨重启命中;
+- paragraph_translate(text,  → ticket-015: 跨进程持久化段落缓存路由(键 sha256(normalize(text))[:16]);
+  context, event_id)            命中即回, 未命中提交调度器后写回 SQLite。
+                                与 inline_translate 共享 ParagraphCache 持久层;
 - health()                    → 引擎存活/版本/队列统计(重连探测用);
 - version()                   → 协议版本信息。
 

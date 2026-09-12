@@ -253,6 +253,28 @@ class TestMergeDualOcr:
         # mixed 通道每个汉字单字词输出, assemble_paragraphs 按词 join
         assert pars == ["工 单 are 物 品"]
 
+    def test_multichar_word_no_indexerror(self):
+        """2026-09-12 19:29 崩溃回归: 多字词混单字时字符索引不能当词索引。
+
+        fanyi-20260912-192922.png: chi_sim 输出整词"矿车"+单字混排,
+        len(text) > len(run_words) → 旧代码 IndexError → 整个 shot 崩溃,
+        无归档无翻译, 通知 6s 被游戏盖住 → 用户体感"无声无息"。
+        """
+        mixed = [
+            OcrWord(1, 1, 1, 100, 85.0, "矿车", top=10, width=40, height=20),
+            OcrWord(1, 1, 1, 145, 85.0, "在", top=10, width=20, height=20),
+            OcrWord(1, 1, 1, 170, 85.0, "轨", top=10, width=20, height=20),
+            OcrWord(1, 1, 1, 195, 85.0, "道", top=10, width=20, height=20),
+            OcrWord(1, 1, 1, 220, 85.0, "榭", top=10, width=20, height=20),
+            OcrWord(1, 1, 1, 245, 85.0, "些", top=10, width=20, height=20),
+        ]
+        # "矿车"整词 + 单字: 旧实现 text 长 9 而 run_words 长 6 → 越界
+        merged = merge_dual_ocr([], mixed, zh_bigrams={"矿车", "轨道"})
+        texts = "".join(w.text for w in merged)
+        assert "矿车" in texts
+        assert "轨道" in texts
+        assert "榭" not in texts and "些" not in texts  # 幻觉垃圾仍被剔除
+
 
 class TestSplitRuns:
     def test_mixed_split(self):

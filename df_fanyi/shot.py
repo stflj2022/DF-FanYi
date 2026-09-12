@@ -320,13 +320,26 @@ def _prune_cjk_run(run_words: list[OcrWord], bigrams: set[str]) -> list[OcrWord]
         return run_words  # 语料不可用 → 不做孤立剔除
     if len(run_words) < 2:
         return []
+    # 词→text 字符区间映射: mixed 通道可能输出多字词(整词"矿车")混单字,
+    # len(text) > len(run_words) 时字符索引不能当词索引用(2026-09-12 19:29
+    # fanyi-20260912-192922.png 触发 IndexError → 整个 shot 崩溃无归档无通知)。
+    spans: list[tuple[int, int]] = []
+    pos = 0
+    for w in run_words:
+        n = len(w.text)
+        spans.append((pos, pos + n))
+        pos += n
     text = "".join(w.text for w in run_words)
-    keep_idx: set[int] = set()
+    keep_chars: set[int] = set()
     for i in range(len(text) - 1):
         if text[i : i + 2] in bigrams:
-            keep_idx.add(i)
-            keep_idx.add(i + 1)
-    return [run_words[i] for i in sorted(keep_idx)]
+            keep_chars.add(i)
+            keep_chars.add(i + 1)
+    # 词内任一字符被 bigram 覆盖则保留(多字词部分命中也保, 保守不丢真词)
+    return [
+        w for w, (s, e) in zip(run_words, spans)
+        if any(c in keep_chars for c in range(s, e))
+    ]
 
 
 def _group_cjk_runs(words: list[OcrWord]) -> list[list[OcrWord]]:

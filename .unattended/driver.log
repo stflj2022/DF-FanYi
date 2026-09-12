@@ -340,3 +340,26 @@ gemma-4b-trans 每次翻译前有 **~500 token thinking 阶段**（ollama 归入
 [2026-09-12 08:53:07] === ROUND 1 ===
 [2026-09-12 08:53:07] Provider: pi-primary
 [2026-09-12 08:53:07] Starting AI agent...
+[2026-09-12 09:13:41] === UNATTENDED DRIVER STARTED v1.2.0 ===
+[2026-09-12 09:13:41] Project: DF-FanYi
+[2026-09-12 09:13:41] Providers: 1 configured
+[2026-09-12 09:13:41] Test command: python3 -m pytest tests/ -q
+[2026-09-12 09:13:41] Mode: (LIVE)
+[2026-09-12 09:13:41] Platform: Linux
+[2026-09-12 09:13:41] Timeout: 7200 s | Zero-output fuse: 900 s
+[2026-09-12 09:13:41] === ROUND 1 ===
+[2026-09-12 09:13:41] Provider: pi-primary
+[2026-09-12 09:13:41] Starting AI agent...
+Error: Unknown option: -m
+[2026-09-12 09:13:42] ❌ Agent failed with code 1 (fail streak 1/3)
+[2026-09-12 09:13:42] Round complete, waiting 30s...
+[2026-09-12 09:14:27] === UNATTENDED DRIVER STARTED v1.2.0 ===
+[2026-09-12 09:14:27] Project: DF-FanYi
+[2026-09-12 09:14:27] Providers: 1 configured
+[2026-09-12 09:14:27] Test command: python3 -m pytest tests/ -q
+[2026-09-12 09:14:27] Mode: (LIVE)
+[2026-09-12 09:14:27] Platform: Linux
+[2026-09-12 09:14:27] Timeout: 7200 s | Zero-output fuse: 900 s
+[2026-09-12 09:14:27] === ROUND 1 ===
+[2026-09-12 09:14:27] Provider: pi-primary
+[2026-09-12 09:14:27] Starting AI agent...

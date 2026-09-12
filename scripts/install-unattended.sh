@@ -21,7 +21,11 @@ ssh -T git@github.com 2>&1 | grep -q "successfully authenticated" || log_error "
 # 2. 渲染 driver.sh(来自 unattended-dev-system 模板,若项目内无备份则从 skill 取)
 TPL="/home/wu/.pi/agent/skills/unattended-dev-system/templates/driver.sh.template"
 [ -f "$REPO/scripts/driver.sh.template" ] && TPL="$REPO/scripts/driver.sh.template"
-AI_COMMAND="pi --print --no-session --mode text -p '无人值守驱动. 读取 docs/tickets 目录,找到编号最小的状态为 pending 且其 Blocked by 引用的工单全部 done 的工单. 严格按该工单实现,遵循 docs/specs 与工程书强制禁止事项,测试驱动开发. 完成后把该工单状态行改为 done,复制该文件到 .unattended/tasks/done 目录,运行 python3 -m pytest tests/ -q 确认全绿,然后 git add -A 并 git commit. 若无可做工单,检查全部工单状态,输出进度总结并改进代码质量'"
+# 成本铁律(2026-09-12 额度危机后新增):
+#   - 显式 -m router/L2: 旗舰 M3 写代码一次到位(工单少, 返工比档位更贵)
+#   - "只读当前工单点名的文件": 砸掉每轮通读全库的复读机烧钱模式
+#   - 空闲分支只报告不改码: 堵住"无可做工单→代码质量改进"的无限烧钱洞
+AI_COMMAND="pi --print --no-session --mode text --model router/L2 -p '无人值守驱动. 成本铁律: 只读当前工单文件与它点名的文件+必要源码, 禁止通读工程书/全库/无关源码, 每轮 token 都是订阅额度. 读取 docs/tickets 目录,找到编号最小的状态为 pending 且其 Blocked by 引用的工单全部 done 的工单. 严格按该工单实现,遵循 docs/specs 与工程书强制禁止事项,测试驱动开发. 完成后把该工单状态行改为 done,复制该文件到 .unattended/tasks/done 目录,运行 python3 -m pytest tests/ -q 确认全绿,然后 git add -A 并 git commit. 若无可做工单,只输出一行等待原因,禁止修改任何代码禁止提交'"
 sed -e "s|{{PROJECT_NAME}}|DF-FanYi|g" \
     -e "s|{{LANGUAGE}}|Python|g" \
     -e "s|{{FRAMEWORK}}|pytest|g" \
@@ -63,6 +67,86 @@ open(p, 'w').write(s.replace(old, new))
 print("✓ all_done 已补丁为基于工单状态行")
 PYEOF
 bash -n "$REPO/driver.sh" || { log_error "补丁后 driver.sh 语法错误"; exit 1; }
+
+# 3.6 三道保险(2026-09-12 方案A): ①额度守卫(暂停到下个5h窗口, watchdog到点自动续)
+#                            ②失败熔断(3连败停机+紧急通知, 防无限烧钱)
+#                            ③紧急桌面通知(notify-send critical)
+python3 - "$REPO/driver.sh" << 'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+if 'GUARD:quota-pause' in s:
+    print('✓ 三道保险已存在,跳过'); sys.exit(0)
+
+# ①+③ 额度守卫: 原 quota 轮换重试逻辑(单provider下=每900s空转重烧) → 暂停到窗口重置
+old = '''    if quota_hit; then
+        log "⚠️ Quota limit hit"
+        FAILS=$((FAILS + 1))
+
+        if [ "$FAILS" -ge "$PROVIDER_COUNT" ]; then
+            log_error "All providers failed, waiting 900s"
+            sleep 900
+            FAILS=0
+        else
+            CURRENT_PROVIDER=$(( (CURRENT_PROVIDER + 1) % PROVIDER_COUNT ))
+            log "Switching to provider: $(cur_provider)"
+        fi
+    fi'''
+new = '''    # GUARD:quota-pause — 保险①: 额度耗尽 → 暂停到下个5h窗口, watchdog 到点自动拉起
+    if quota_hit; then
+        RESUME_AT=$(( $(date +%s) + 18000 ))
+        echo "$RESUME_AT" > "$LOG_DIR/PAUSED_QUOTA"
+        log_error "额度耗尽(429/quota) → 暂停至 $(date -d @$RESUME_AT '+%F %T'), 窗口重置后自动续跑"
+        notify-send --app-name=DF-FanYi --urgency=critical -t 0 \\
+            "⏸ DF-FanYi 无人值守暂停" \\
+            "额度耗尽, 5小时窗口重置后自动续跑: $(date -d @$RESUME_AT '+%H:%M')\\n工单进度已保存, 无需人工干预" 2>/dev/null || true
+        exit 0
+    fi'''
+assert old in s, 'quota_hit 原文未匹配'
+s = s.replace(old, new)
+
+# ②+③ 失败熔断: 连续3轮失败(含超时) → 停机+紧急通知
+old2 = '''        if [ "${EXIT_CODE:-1}" -eq 0 ]; then
+            log_success "Round completed successfully"
+            auto_commit "Auto checkpoint - Round $ROUND"
+        elif [ "${EXIT_CODE:-1}" -eq 124 ]; then
+            log_error "Timeout after $DRIVER_TIMEOUT seconds"
+            save_checkpoint "timeout" "Driver timeout" "Retry next round" "Round $ROUND timeout"
+        else
+            log_error "Agent failed with code ${EXIT_CODE:-1}"
+        fi
+        unset EXIT_CODE'''
+new2 = '''        # GUARD:fail-streak — 保险②: 连续3轮失败 → 熔断停机(人工检查后恢复)
+        if [ "${EXIT_CODE:-1}" -eq 0 ]; then
+            log_success "Round completed successfully"
+            echo 0 > "$LOG_DIR/.fail_streak"
+            auto_commit "Auto checkpoint - Round $ROUND"
+        else
+            STREAK=$(( $(cat "$LOG_DIR/.fail_streak" 2>/dev/null || echo 0) + 1 ))
+            echo "$STREAK" > "$LOG_DIR/.fail_streak"
+            if [ "$STREAK" -ge 3 ]; then
+                echo "circuit-break: 连续${STREAK}轮失败 @ $(date '+%F %T'), 详见 driver.log" > "$LOG_DIR/STOPPED"
+                log_error "🛑 连续 $STREAK 轮失败 → 熔断停机. 恢复: rm .unattended/STOPPED && bash scripts/install-unattended.sh"
+                notify-send --app-name=DF-FanYi --urgency=critical -t 0 \\
+                    "🛑 DF-FanYi 熔断停机" \\
+                    "连续 ${STREAK} 轮 agent 失败, 已停机防烧钱\\n查看: tail -50 ~/DF-FanYi/.unattended/driver.log\\n恢复: rm ~/DF-FanYi/.unattended/STOPPED 后 bash scripts/install-unattended.sh" 2>/dev/null || true
+                exit 1
+            fi
+            if [ "${EXIT_CODE:-1}" -eq 124 ]; then
+                log_error "Timeout after $DRIVER_TIMEOUT seconds (fail streak $STREAK/3)"
+                save_checkpoint "timeout" "Driver timeout" "Retry next round" "Round $ROUND timeout"
+            else
+                log_error "Agent failed with code ${EXIT_CODE:-1} (fail streak $STREAK/3)"
+            fi
+        fi
+        unset EXIT_CODE'''
+assert old2 in s, 'EXIT_CODE 原文未匹配'
+s = s.replace(old2, new2)
+
+open(p, 'w').write(s)
+print('✓ 三道保险已注入: ①额度守卫(5h自动续) ②失败熔断(3连败停机) ③紧急通知')
+PYEOF
+bash -n "$REPO/driver.sh" || { log_error "三道保险补丁后语法错误"; exit 1; }
 
 # 3. config.json(driver 运行时读取,覆盖模板默认值)
 cat > "$REPO/.unattended/config.json" << EOF

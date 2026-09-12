@@ -9,6 +9,23 @@ mkdir -p "$REPO/.unattended"
 # 完工标记后静默退出
 [ -f "$REPO/.unattended/STOPPED" ] && exit 0
 
+# GUARD:quota-pause — 额度暂停尊重(保险①配套):
+#   未到恢复时间 → 不拉起 driver(静默等待窗口重置)
+#   到点 → 清暂停标记, 正常拉起 driver 续跑
+PAUSE_F="$REPO/.unattended/PAUSED_QUOTA"
+if [ -f "$PAUSE_F" ]; then
+  RESUME_AT=$(cat "$PAUSE_F" 2>/dev/null || echo 0)
+  NOW=$(date +%s)
+  if [ "$NOW" -lt "$RESUME_AT" ]; then
+    log "额度暂停中, $(date -d @$RESUME_AT '+%F %T') 恢复 — 本轮不拉起"
+    exit 0
+  fi
+  log "额度窗口已重置 → 清暂停标记, 拉起 driver 续跑"
+  rm -f "$PAUSE_F"
+  notify-send --app-name=DF-FanYi --urgency=normal -t 30000 \
+    "▶️ DF-FanYi 额度窗口重置" "无人值守自动续跑" 2>/dev/null || true
+fi
+
 # 完工判据成立 → 自停(driver 内部也会自查,此为双保险)
 if bash "$REPO/scripts/completion-check.sh" >/dev/null 2>&1; then
   log "完工判据成立 → shutdown"

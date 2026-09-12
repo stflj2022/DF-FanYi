@@ -363,3 +363,29 @@ Error: Unknown option: -m
 [2026-09-12 09:14:27] === ROUND 1 ===
 [2026-09-12 09:14:27] Provider: pi-primary
 [2026-09-12 09:14:27] Starting AI agent...
+**ticket-013 完成** — commit `185c9b1`，全绿。
+
+## 本轮工作摘要
+
+**工单**: ticket-013 textviewer 弹窗内嵌翻译覆盖层（依赖 012 已 done）
+
+**TDD 流程**（RED → GREEN）：
+1. 先写 `tests/test_textviewer_inline.py` 11 例（图集生成器 / 提交的图集文件 / 引擎 inline_translate / Lua 组件全链）
+2. 实现至全绿
+
+**交付**：
+| 层 | 内容 |
+|---|---|
+| `fanyi.lua` | `TextviewerInline` overlay widget（`fanyi.textviewer`，viewscreen 弹窗内贴图）；`tv_cache`（LRU 32 + 离开弹窗过期）；textviewer-font 图集装载（scale=2 四格贴字）；缺译文登记 `inline_translate` 由 tick 冲刷 + `...` 占位；`overlays on\|off textviewer` 命令；status 输出 `textviewer_inline (on/off)` |
+| 引擎 | `df_fanyi/bridge/server.py` 新增 `inline_translate`：段落缓存键 `inline:{ctx}:{title}:{sha1}`，命中秒回（`cached=true`），未命中同步 `done` / 异步 `queued` 完成回填（LRU 256） |
+| 图集 | `generate_font_atlas.py` 新增 `--subset/--corpus`（语料 topN CJK）；`dfhack/data/textviewer-font/` 已生成提交（800 字、scale=2、922 字形含标点） |
+| 周边修复 | `fanyi_count_map` 被 012 误删导致 `fanyi debug` 会崩 → 恢复；install 脚本 FONT 路径切到 `textviewer-font`；`overlays_cmd` 场景按新语义更新 |
+
+**踩坑记录**：
+- 异步完成回填失败：调度器内部 `normalize_text` 归一化文本，等待表须按归一化形登记
+- `S.tv_on = S.tv_on or true` 在 DFHack「每命令重执行脚本」语义下会把 `false` 重置回 `true` → 改显式 `== nil` 判空
+
+**验收**: `pytest tests/ -q` → **378 passed**；工单状态 → `done`，已复制到 `.unattended/tasks/done/`，commit `185c9b1`。
+
+下一可做工单：ticket-014（announcement_inline，依赖 012 ✓ / 013 不阻塞）。
+[2026-09-12 09:30:19] ✅ Round completed successfully

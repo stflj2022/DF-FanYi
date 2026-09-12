@@ -765,20 +765,14 @@ local function paint_cjk_rows(dc, rows, rect)
     local scale = S.tv_font.scale or 1
     local resolve = S.tv_font.tex and S.tv_font.tex.getTexposByHandle or nil
     if not resolve then return 0 end
-    -- 1) 涂底: 用不透明背景色覆盖矩形(消灭英文透出)
-    --    使用黑底(COLOR_BLACK=0, COLOR_WHITE=7) 保证覆盖;
-    --    面板原底色不管, 黑底足够覆盖且与 textviewer/announcement 面板
-    --    默认深色背景相近, 视觉差异最小。
-    --    退路: 如果 dc.pen 设置报镗, 直接 dc:string(' ') 也可.
+    -- 1) 涂底: 物理格全覆盖(2026-09-12 修复②: 旧版按 scale 间隔涂=棋盘格,
+    --    3/4 格子漏涂, 英文从缝隙透出 → "中英叠印"。涂底与 scale 无关,
+    --    逐物理格涂才能完全覆盖)。
     pcall(function() dc:pen(7, 0) end)  -- fg=white bg=black
-    local bg_rows = math.floor(rect.h / scale)
-    local bg_cols = math.floor(rect.w / scale)
-    for ri = 1, bg_rows do
-        local y = rect.y + (ri - 1) * scale
-        for ci = 0, bg_cols - 1 do
-            local x = rect.x + ci * scale
-            -- tile(' ', 0) = 空格字符, 无字形 = 仅涂黑底
-            pcall(function() dc:seek(x, y):tile(' ', 0) end)
+    for ri = 0, rect.h - 1 do
+        local y = rect.y + ri
+        for ci = 0, rect.w - 1 do
+            pcall(function() dc:seek(rect.x + ci, y):tile(' ', 0) end)
         end
     end
     -- 2) 贴 CJK 字形 (原有逻辑)
@@ -1007,12 +1001,14 @@ function fanyi_announcement_rect(max_cols, max_rows)
         end
         error('announcement panel layout unavailable')
     end)
+    -- 2026-09-12 修复①: DFHack 53.06 的 getPanelLayout() 只返回 map 键
+    -- (TEXTVIEWER/ANNOUNCEMENT 是 53.13+ 才有), 旧 fallback 退到右下角
+    -- 40×10 固定区域 = 假"字幕条"+周围英文 = 用户看到的混杂。拿不到真实
+    -- 面板矩形时宁缺毋滥: 返回 nil, 调用方静默原文(dfint 词级翻译兜底)。
     if ok and type(box) == 'table' and box.w and box.h and box.w > 0 and box.h > 0 then
         return box
     end
-    local w = math.min(40, max_cols)
-    local h = math.min(10, max_rows)
-    return {x = math.max(0, max_cols - w), y = math.max(1, max_rows - 15), w = w, h = h}
+    return nil
 end
 
 -- 贴图绘制(纯逻辑, dc 由调用方注入; 返回绘制格数): 公告面板矩形内贴最新公告
@@ -1031,6 +1027,7 @@ function fanyi_paint_announcement(dc, max_cols, max_rows)
     local entries = fanyi_ann_visible_entries()
     if #entries == 0 then return 0 end
     local rect = fanyi_announcement_rect(max_cols, max_rows)
+    if not rect then return 0 end  -- 修复①: 无真实面板矩形 → 不画(消假字幕条)
     local scale = S.tv_font.scale or 1
     local vis_cols = math.floor(rect.w / scale)
     local vis_rows = math.floor(rect.h / scale)

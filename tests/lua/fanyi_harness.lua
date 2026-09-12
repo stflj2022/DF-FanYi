@@ -334,6 +334,13 @@ env.dfhack = {
 -- ticket-013: textviewer 弹窗 mock(getCurViewscreen + viewscreen 判型由 env.df 提供)
 env.dfhack.gui = {
     getCurViewscreen = function() return M.cur_viewscreen end,
+    -- 2026-09-12: mock 53.13+ 面板布局(修复①后无矩形则不画; 无头测试需供给矩形)
+    getPanelLayout = function()
+        return {
+            map = {x1 = 0, y1 = 0, x2 = 79, y2 = 24},
+            ANNOUNCEMENT = {x1 = 1, y1 = 18, x2 = 40, y2 = 24},
+        }
+    end,
 }
 env.dfhack_flags = {}
 env.df = {

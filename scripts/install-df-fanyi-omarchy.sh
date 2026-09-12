@@ -55,6 +55,13 @@ PY="$(command -v python3 || true)"
 GIT="$(command -v git || true)"
 [ -n "$GIT" ] || die "未找到 git"
 
+# 截图翻译工具链(Ctrl+Print)缺失时提示安装(不自动 sudo)
+MISSING_TOOLS=""
+for t in slurp grim zenity wl-copy tesseract; do
+  command -v "$t" >/dev/null 2>&1 || MISSING_TOOLS="$MISSING_TOOLS $t"
+done
+[ -z "$MISSING_TOOLS" ] || warn "截图翻译缺工具:$MISSING_TOOLS —— Arch/omarchy: pacman -S slurp grim zenity wl-clipboard tesseract"
+
 # ---- 1. 定位/克隆 DF-FanYi ---------------------------------------------------
 if [ -d "$DF_FANYI_DIR/.git" ]; then
   info "复用现有引擎: $DF_FANYI_DIR"
@@ -77,11 +84,26 @@ info "安装引擎依赖(pyyaml, requests)..."
 "$VENV_DIR/bin/pip" install --quiet --upgrade pip
 "$VENV_DIR/bin/pip" install --quiet -e "$DF_FANYI_DIR"
 [ -d "$DF_FANYI_DIR/data" ] || mkdir -p "$DF_FANYI_DIR/data"
-if [ -f "$GAME_DIR/DF-FanYi-离线翻译包/engine.db" ]; then
-  cp -f "$GAME_DIR/DF-FanYi-离线翻译包/engine.db" "$DF_FANYI_DIR/data/engine.db"
-  info "离线翻译包已复制 → $DF_FANYI_DIR/data/engine.db"
+# 仅首次拷贝: 已有 engine.db 说明新机器已运行学习过, 重跑 install 不得抹掉学习成果
+# (想强制用包内快照覆盖: FORCE_ENGINE_DB=1 bash install-df-fanyi-omarchy.sh)
+if [ ! -f "$DF_FANYI_DIR/data/engine.db" ] || [ "${FORCE_ENGINE_DB:-0}" = "1" ]; then
+  if [ -f "$GAME_DIR/DF-FanYi-离线翻译包/engine.db" ]; then
+    cp -f "$GAME_DIR/DF-FanYi-离线翻译包/engine.db" "$DF_FANYI_DIR/data/engine.db"
+    info "离线翻译包已复制 → $DF_FANYI_DIR/data/engine.db"
+  else
+    warn "未找到 离线翻译包/engine.db(不影响引擎启动, 但命中率会低)"
+  fi
 else
-  warn "未找到 离线翻译包/engine.db(不影响引擎启动, 但命中率会低)"
+  info "已有 engine.db, 保留(不覆盖新机器学习成果; 强制刷新: FORCE_ENGINE_DB=1)"
+fi
+
+# ---- 2.5 同步 fanyi.lua(引擎 repo 内是源头, 游戏目录是运行副本) ----------------
+if [ -f "$DF_FANYI_DIR/dfhack/scripts/fanyi.lua" ]; then
+  mkdir -p "$GAME_DIR/hack/scripts"
+  if ! diff -q "$DF_FANYI_DIR/dfhack/scripts/fanyi.lua" "$GAME_DIR/hack/scripts/fanyi.lua" >/dev/null 2>&1; then
+    cp -f "$DF_FANYI_DIR/dfhack/scripts/fanyi.lua" "$GAME_DIR/hack/scripts/fanyi.lua"
+    info "fanyi.lua 已同步到 hack/scripts/(引擎与游戏脚本配套)"
+  fi
 fi
 
 # ---- 3. (可选) model-router 部署 ---------------------------------------------
@@ -94,12 +116,12 @@ if [ -f "$MODEL_ROUTER_DIR/router.py" ]; then
   "$MR_VENV/bin/pip" install --quiet --upgrade pip
   "$MR_VENV/bin/pip" install --quiet fastapi uvicorn httpx pyyaml
   if [ ! -f "$MODEL_ROUTER_DIR/env" ]; then
-    warn "model-router/env 不存在 —— 手动创建它(把 API key 填进去):"
-    warn "  cp $MODEL_ROUTER_DIR/env.example $MODEL_ROUTER_DIR/env (若有样例)"
-    warn "  或: nano $MODEL_ROUTER_DIR/env  内容形如:"
-    warn "       GLM_API_KEY=你的智谱key   # 或 SCNET_API_KEY / OPENROUTER_API_KEY"
+    warn "model-router/env 不存在 —— 复制样例并填入 API key:"
+    warn "  cp $MODEL_ROUTER_DIR/env.example $MODEL_ROUTER_DIR/env"
+    warn "  然后编辑填入 MINIMAX_API_KEY / GLM_API_KEY, 再:"
+    warn "  systemctl --user restart df-fanyi-router"
     [ -f "$MODEL_ROUTER_DIR/env.example" ] || \
-      printf 'GLM_API_KEY=\nSCNET_API_KEY=\nOPENROUTER_API_KEY=\n' > "$MODEL_ROUTER_DIR/env.example"
+      printf 'MINIMAX_API_KEY=\nGLM_API_KEY=\n' > "$MODEL_ROUTER_DIR/env.example"
   fi
   info "注册 model-router systemd 服务..."
   mkdir -p "$HOME/.config/systemd/user"
@@ -128,6 +150,65 @@ EOF
 else
   info "未检测到 ./model-router/ —— 跳过云端路由(引擎可纯离线工作)"
   warn "想让漏网长句也实时中文化: 拷 model-router 目录过来后重跑本脚本, 或改用 ollama(指南第七节)"
+fi
+
+# ---- 3.5 omarchy-tools 部署(截图翻译 Ctrl+Print + 调优配置 + OCR 中文包) -------
+TOOLS_DIR="$GAME_DIR/omarchy-tools"
+if [ -d "$TOOLS_DIR" ]; then
+  # a) 用户覆盖配置(队列调优: workers 4 / queue 512, 战斗瞬时不过载)
+  if [ -f "$TOOLS_DIR/config.yaml" ]; then
+    mkdir -p "$HOME/.config/df-fanyi"
+    if [ -f "$HOME/.config/df-fanyi/config.yaml" ]; then
+      cp -f "$HOME/.config/df-fanyi/config.yaml" "$HOME/.config/df-fanyi/config.yaml.bak.$(date +%s)"
+    fi
+    cp -f "$TOOLS_DIR/config.yaml" "$HOME/.config/df-fanyi/config.yaml"
+    info "引擎调优配置已装 → ~/.config/df-fanyi/config.yaml"
+  fi
+
+  # b) tesseract 中文语言包(双通道 OCR 的 chi_sim; 装用户级不动系统)
+  if [ -f "$TOOLS_DIR/chi_sim.traineddata" ]; then
+    TESS_DIR="$HOME/.local/share/tesseract/tessdata"
+    mkdir -p "$TESS_DIR"
+    if [ ! -f "$TESS_DIR/chi_sim.traineddata" ]; then
+      cp -f "$TOOLS_DIR/chi_sim.traineddata" "$TESS_DIR/"
+      info "OCR 中文包已装 → $TESS_DIR/chi_sim.traineddata"
+    else
+      info "OCR 中文包已存在, 跳过"
+    fi
+  fi
+
+  # c) fanyi-shot 截图翻译脚本(引擎路径注入 → ~/.local/bin)
+  if [ -f "$TOOLS_DIR/fanyi-shot" ]; then
+    mkdir -p "$HOME/.local/bin"
+    sed "s|__FANYI_ENGINE_DIR__|$DF_FANYI_DIR|g" "$TOOLS_DIR/fanyi-shot" > "$HOME/.local/bin/fanyi-shot"
+    chmod +x "$HOME/.local/bin/fanyi-shot"
+    info "截图翻译脚本已装 → ~/.local/bin/fanyi-shot (Ctrl+Print)"
+  fi
+
+  # d) hyprland 快捷键 + 浮窗规则(幂等追加, 不覆盖用户已有配置)
+  _add_hypr_line() {  # $1=file  $2=marker  $3=line
+    [ -f "$1" ] || return 1
+    grep -qF "$2" "$1" && return 0
+    printf '\n%s\n' "$3" >> "$1"
+    info "已追加 hypr 规则 → $1"
+  }
+  HYP=/dev/null
+  for d in "$HOME/.config/hypr"; do
+    [ -d "$d" ] && HYP="$d" && break
+  done
+  if [ -d "$HYP" ]; then
+    _add_hypr_line "$HYP/bindings.lua" 'CTRL + PRINT' \
+      'o.bind("CTRL + PRINT", "FanYi 截图翻译(选区)", "fanyi-shot")' || \
+      warn "无 bindings.lua —— 手动加快捷键: o.bind(\"CTRL + PRINT\", \"FanYi 截图翻译(选区)\", \"fanyi-shot\")"
+    _add_hypr_line "$HYP/windows.lua" 'FanYi 截图翻译' \
+      'o.window({ class = "^zenity$", title = "FanYi 截图翻译" }, { float = true, center = true, pin = true })' || true
+    command -v hyprctl >/dev/null 2>&1 && hyprctl reload >/dev/null 2>&1 || true
+    info "hyprland 已 reload(快捷键/浮窗规则生效)"
+  else
+    warn "未找到 ~/.config/hypr/ —— 非 hyprland 环境? 手动绑 Ctrl+Print → fanyi-shot"
+  fi
+else
+  info "无 omarchy-tools/ —— 跳过截图翻译部署(仅公告字幕翻译可用)"
 fi
 
 # ---- 4. 注册 bridge 服务 -----------------------------------------------------
@@ -167,4 +248,6 @@ fi
 
 info "全部完成! 现在可以启动游戏了(Dwarf Fortress.exe 或 Steam + Proton)。"
 info "验证字幕: 进游戏后 DFHack 控制台执行: fanyi status"
+info "验证截图翻译: 任意界面按 Ctrl+Print 框选一段文字(中英皆可)"
+[ -x "$HOME/.local/bin/fanyi-shot" ] && info "  (脚本: ~/.local/bin/fanyi-shot; 引擎: $DF_FANYI_DIR)"
 printf '\033[1;32m[完成]\033[0m 日志: %s\n' "$LOG"

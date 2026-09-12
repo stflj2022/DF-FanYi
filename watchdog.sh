@@ -22,8 +22,8 @@ if [ -f "$PAUSE_F" ]; then
   fi
   log "额度窗口已重置 → 清暂停标记, 拉起 driver 续跑"
   rm -f "$PAUSE_F"
-  notify-send --app-name=DF-FanYi --urgency=normal -t 30000 \
-    "▶️ DF-FanYi 额度窗口重置" "无人值守自动续跑" 2>/dev/null || true
+  "$REPO/scripts/notify.sh" "DF-FanYi" \
+    "▶️ DF-FanYi 额度窗口重置" "无人值守自动续跑" "normal" 2>/dev/null || true
 fi
 
 # 完工判据成立 → 自停(driver 内部也会自查,此为双保险)

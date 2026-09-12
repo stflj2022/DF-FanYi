@@ -384,9 +384,9 @@ while true; do
                 RESUME_AT=$(( $(date +%s) + 18000 ))
                 echo "$RESUME_AT" > "$LOG_DIR/PAUSED_QUOTA"
                 log_error "双供应商额度耗尽(429/quota) → 暂停至 $(date -d @$RESUME_AT '+%F %T'), 窗口重置后自动续跑"
-                notify-send --app-name=DF-FanYi --urgency=critical -t 0 \
+                "$REPO/scripts/notify.sh" "DF-FanYi" \
                     "⏸ DF-FanYi 无人值守暂停" \
-                    "MiniMax+智谱额度均耗尽, 5h 窗口重置后自动续跑: $(date -d @$RESUME_AT '+%H:%M')\n工单进度已保存, 无需人工干预" 2>/dev/null || true
+                    "MiniMax+智谱额度均耗尽, 5h 窗口重置后自动续跑: $(date -d @$RESUME_AT '+%H:%M')\n工单进度已保存, 无需人工干预" "critical" 2>/dev/null || true
                 exit 0
             fi
             STREAK=$(( $(cat "$LOG_DIR/.fail_streak" 2>/dev/null || echo 0) + 1 ))
@@ -394,9 +394,9 @@ while true; do
             if [ "$STREAK" -ge 3 ]; then
                 echo "circuit-break: 连续${STREAK}轮失败 @ $(date '+%F %T'), 详见 driver.log" > "$LOG_DIR/STOPPED"
                 log_error "🛑 连续 $STREAK 轮失败 → 熔断停机. 恢复: rm .unattended/STOPPED && bash scripts/install-unattended.sh"
-                notify-send --app-name=DF-FanYi --urgency=critical -t 0 \
+                "$REPO/scripts/notify.sh" "DF-FanYi" \
                     "🛑 DF-FanYi 熔断停机" \
-                    "连续 ${STREAK} 轮 agent 失败, 已停机防烧钱\n查看: tail -50 ~/DF-FanYi/.unattended/driver.log\n恢复: rm ~/DF-FanYi/.unattended/STOPPED 后 bash scripts/install-unattended.sh" 2>/dev/null || true
+                    "连续 ${STREAK} 轮 agent 失败, 已停机防烧钱\n查看: tail -50 ~/DF-FanYi/.unattended/driver.log\n恢复: rm ~/DF-FanYi/.unattended/STOPPED 后 bash scripts/install-unattended.sh" "critical" 2>/dev/null || true
                 exit 1
             fi
             if [ "${EXIT_CODE:-1}" -eq 124 ]; then

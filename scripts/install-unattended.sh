@@ -18,6 +18,48 @@ for c in git tmux python3 pi systemctl; do
 done
 ssh -T git@github.com 2>&1 | grep -q "successfully authenticated" || log_error "GitHub SSH 未就绪,auto-push 会失败"
 
+# 1.5 通知 daemon 硬前置 (2026-09-12 教训: 装好没 daemon = 通知全丢)
+# 检测 org.freedesktop.Notifications 总线上是否有任何守护进程响应
+# 兼容: quickshell(omarchy)、mako、dunst、swaync、fnott
+NOTIF_DAEMON_OK=false
+if command -v gdbus >/dev/null 2>&1; then
+  if gdbus call --session --dest org.freedesktop.DBus \
+       --object-path /org/freedesktop/DBus \
+       --method org.freedesktop.DBus.ListNames 2>/dev/null \
+     | grep -q "'org.freedesktop.Notifications'"; then
+    NOTIF_DAEMON_OK=true
+  fi
+fi
+if [ "$NOTIF_DAEMON_OK" = false ]; then
+  # 主动尝试启动 mako(Wayland 默认, Hyprland 兼容)
+  if command -v mako >/dev/null 2>&1; then
+    log_info "通知 daemon 未运行 → 自动拉起 mako"
+    mako &
+    sleep 2
+    if gdbus call --session --dest org.freedesktop.DBus \
+         --object-path /org/freedesktop/DBus \
+         --method org.freedesktop.DBus.ListNames 2>/dev/null \
+       | grep -q "'org.freedesktop.Notifications'"; then
+      NOTIF_DAEMON_OK=true
+    fi
+  fi
+fi
+if [ "$NOTIF_DAEMON_OK" = false ]; then
+  log_error "硬前置: 通知 daemon 不在 (org.freedesktop.Notifications 没人响应)"
+  log_error "请装一个: sudo pacman -S mako (或 dunst/swaync/fnott) 并加入 hyprland.conf exec-once"
+  log_error "已写 .unattended/notification-lost.log; 安装终止, 修复后重跑本脚本"
+  echo "[$(date '+%F %T')] install aborted: no notification daemon (org.freedesktop.Notifications empty)" \
+    >> "$REPO/.unattended/notification-lost.log"
+  exit 1
+fi
+# 端到端测试: 发一条临时通知, 看 daemon 能否显示
+TEST_OUT=$("$REPO/scripts/notify.sh" "DF-FanYi" "🛠 安装自检" "通知通道验证, 看到这条=通过" "normal" 2>&1)
+if [ $? -ne 0 ]; then
+  log_error "硬前置: 通知发送测试失败 ($TEST_OUT)"
+  exit 1
+fi
+log_info "通知 daemon 健康 (端到端测试通过)"
+
 # 2. 渲染 driver.sh(来自 unattended-dev-system 模板,若项目内无备份则从 skill 取)
 TPL="/home/wu/.pi/agent/skills/unattended-dev-system/templates/driver.sh.template"
 [ -f "$REPO/scripts/driver.sh.template" ] && TPL="$REPO/scripts/driver.sh.template"
@@ -119,9 +161,9 @@ new2 = '''        # GUARD:fail-streak — 保险②: 连续3轮失败 → 熔断
                 RESUME_AT=$(( $(date +%s) + 18000 ))
                 echo "$RESUME_AT" > "$LOG_DIR/PAUSED_QUOTA"
                 log_error "双供应商额度耗尽(429/quota) → 暂停至 $(date -d @$RESUME_AT '+%F %T'), 窗口重置后自动续跑"
-                notify-send --app-name=DF-FanYi --urgency=critical -t 0 \\
-                    "⏸ DF-FanYi 无人值守暂停" \\
-                    "MiniMax+智谱额度均耗尽, 5h 窗口重置后自动续跑: $(date -d @$RESUME_AT '+%H:%M')\\n工单进度已保存, 无需人工干预" 2>/dev/null || true
+                "$REPO/scripts/notify.sh" "DF-FanYi" \
+                    "⏸ DF-FanYi 无人值守暂停" \
+                    "MiniMax+智谱额度均耗尽, 5h 窗口重置后自动续跑: $(date -d @$RESUME_AT '+%H:%M')\\n工单进度已保存, 无需人工干预" "critical" 2>/dev/null || true
                 exit 0
             fi
             STREAK=$(( $(cat "$LOG_DIR/.fail_streak" 2>/dev/null || echo 0) + 1 ))
@@ -129,9 +171,9 @@ new2 = '''        # GUARD:fail-streak — 保险②: 连续3轮失败 → 熔断
             if [ "$STREAK" -ge 3 ]; then
                 echo "circuit-break: 连续${STREAK}轮失败 @ $(date '+%F %T'), 详见 driver.log" > "$LOG_DIR/STOPPED"
                 log_error "🛑 连续 $STREAK 轮失败 → 熔断停机. 恢复: rm .unattended/STOPPED && bash scripts/install-unattended.sh"
-                notify-send --app-name=DF-FanYi --urgency=critical -t 0 \\
-                    "🛑 DF-FanYi 熔断停机" \\
-                    "连续 ${STREAK} 轮 agent 失败, 已停机防烧钱\\n查看: tail -50 ~/DF-FanYi/.unattended/driver.log\\n恢复: rm ~/DF-FanYi/.unattended/STOPPED 后 bash scripts/install-unattended.sh" 2>/dev/null || true
+                "$REPO/scripts/notify.sh" "DF-FanYi" \
+                    "🛑 DF-FanYi 熔断停机" \
+                    "连续 ${STREAK} 轮 agent 失败, 已停机防烧钱\\n查看: tail -50 ~/DF-FanYi/.unattended/driver.log\\n恢复: rm ~/DF-FanYi/.unattended/STOPPED 后 bash scripts/install-unattended.sh" "critical" 2>/dev/null || true
                 exit 1
             fi
             if [ "${EXIT_CODE:-1}" -eq 124 ]; then

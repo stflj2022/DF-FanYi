@@ -1,8 +1,10 @@
 #!/bin/bash
 # progress-report.sh — 每30分钟一次进度通知(自动工程工作流机制)
-# 通知策略: 手动点击才消失 + 只显示最新一条
-#   通道1 dunst/swaync/mako: notify-send -t 0(永驻) + 固定 app 名(daemon 按 app 自动替换旧条)
-#   通道2 无守护进程时: Hyprland hyprctl notify(timeout 0 常驻; 无点击关闭能力,属降级)
+# 通知策略 (2026-09-12 修订):
+#   - 只显示最新一条: 统一走 scripts/notify.sh, 同 headline 自动替换
+#   - 永驻: --expire-time=0, 用户手动点击/右键关闭
+#   - 永不死信: notify.sh 检测 daemon 离线→写 notification-lost.log
+#   - 完工后静默
 REPO="/home/wu/DF-FanYi"
 LOGF="$REPO/.unattended/progress-report.log"
 mkdir -p "$REPO/.unattended"
@@ -24,14 +26,8 @@ MSG="工单: $DONE/$TOTAL 完成 · driver 运行中:$RUNNING
 
 echo "[$(date '+%F %T')] $DONE/$TOTAL | driver=$RUNNING | $LAST" >> "$LOGF"
 
-# 通道选择: 1) 标准通知守护(quickshell/dunst/swaync/mako) → dbus 关旧发新
-#           2) 无守护时降级 Hyprland 内置 notify(无法点击关闭)
-if python3 -c 'import dbus' >/dev/null 2>&1; then
-  NOTIFY_STATE_FILE="$REPO/.unattended/.notif_id" python3 "$REPO/scripts/notify.py" "DF-FanYi" "🏗️ DF-FanYi 无人值守进度 $DONE/$TOTAL" "$MSG" 2>>"$LOGF" || \
-    notify-send --app-name="DF-FanYi" -t 0 "🏗️ DF-FanYi $DONE/$TOTAL" "$MSG"
-elif command -v hyprctl >/dev/null 2>&1; then
-  MSG_FLAT=$(echo "$MSG" | tr '\n' ' ')
-  hyprctl notify -1 0 0xff44aa88 "🏗️ DF-FanYi $DONE/$TOTAL $MSG_FLAT" >/dev/null 2>&1
-else
-  echo "[$(date '+%F %T')] 无通知通道,MSG=$MSG" >> "$LOGF"
-fi
+# 统一通知入口 (2026-09-12: 替换旧 python3 notify.py + 直接 notify-send)
+# 只显示最新一条 + 永驻 + 自动替换(同 headline)
+HEADLINE="🏗️ DF-FanYi 进度 $DONE/$TOTAL"
+"$REPO/scripts/notify.sh" "DF-FanYi" "$HEADLINE" "$MSG" "normal" 2>>"$LOGF" || \
+  echo "[$(date '+%F %T')] notify.sh 失败(见 notification-lost.log), MSG=$MSG" >> "$LOGF"

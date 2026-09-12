@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 __all__ = [
@@ -21,6 +22,7 @@ __all__ = [
     "translate_paragraphs",
     "process_image",
     "render_markdown",
+    "split_runs",
 ]
 
 
@@ -40,6 +42,38 @@ _TSV_COLS = 12  # level page block par line word left top width height conf text
 _LETTER = re.compile(r"[A-Za-z]")
 _VOWEL = re.compile(r"[aeiouyAEIOUY]")
 _ALNUM = re.compile(r"[A-Za-z0-9]")
+# 中日韩统一表意文字 + CJK 标点 + 全角符号(OCR 常见形态)
+_CJK_CHAR = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f\uff00-\uffef]")
+# 中文相邻字符间的 OCR 伪空格(tesseract 每字一词) 应折叠
+_CJK_GAP = re.compile(r"(?<=[\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f])\s+(?=[\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f\uff00-\uffef])")
+
+_LOCAL_TESSDATA = Path.home() / ".local" / "share" / "tesseract" / "tessdata"
+
+
+def collapse_cjk_spaces(text: str) -> str:
+    """折叠中文字符间 OCR 伪空格: '加 能 区' → '加能区'。"""
+    return _CJK_GAP.sub("", text)
+
+
+def split_runs(text: str) -> list[tuple[bool, str]]:
+    """把混排文本切成 [(是否含CJK, 段), ...] 连续片段。
+
+    中文段(已汉化 UI)原样保留, 英文段才送翻译。
+    """
+    out: list[tuple[bool, str]] = []
+    cur, cur_cjk = "", None
+    for ch in text:
+        is_cjk = bool(_CJK_CHAR.match(ch))
+        if cur_cjk is None:
+            cur_cjk = is_cjk
+        if is_cjk == cur_cjk:
+            cur += ch
+        else:
+            out.append((cur_cjk, cur))
+            cur, cur_cjk = ch, is_cjk
+    if cur:
+        out.append((bool(cur_cjk), cur))
+    return out
 
 
 def parse_tsv(raw: str, *, min_conf: float = 30.0) -> list[OcrWord]:
@@ -77,7 +111,14 @@ def _paragraph_text(words: list[OcrWord]) -> str:
 
 
 def _is_game_text(text: str) -> bool:
-    """过滤地图区图形 OCR 噪声: 需够多字母、含元音、字母占比过半。"""
+    """过滤地图区图形 OCR 噪声。
+
+    含中文(≥2 字)直接放行 —— 已汉化 UI 混排段落;
+    纯英文段仍需: 够多字母 + 含元音 + 字母占比过半。
+    """
+    cjk = _CJK_CHAR.findall(text)
+    if len(cjk) >= 2:
+        return True
     letters = len(_LETTER.findall(text))
     if letters < 4:
         return False
@@ -116,22 +157,38 @@ def assemble_paragraphs(words: list[OcrWord], *, max_par: int = 12) -> list[str]
 
 
 def ocr_image(image_path: str, *, timeout: int = 30) -> list[OcrWord]:
-    """对图片跑 tesseract(eng, 自动版面), 返回词条。"""
-    proc = subprocess.run(
-        ["tesseract", image_path, "stdout", "-l", "eng", "tsv"],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+    """对图片跑 tesseract, 返回词条。
+
+    本地装了 chi_sim 时用 chi_sim+eng 双语(游戏屏常为中英混排:
+    内联汉化 overlay + 残留英文), 否则退回纯 eng。
+    """
+    cmd = ["tesseract"]
+    langs = "eng"
+    if (_LOCAL_TESSDATA / "chi_sim.traineddata").exists():
+        cmd += ["--tessdata-dir", str(_LOCAL_TESSDATA)]
+        langs = "chi_sim+eng"
+    cmd += [image_path, "stdout", "-l", langs, "tsv"]
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     if proc.returncode != 0:
         raise RuntimeError(f"tesseract 失败: {proc.stderr.strip()[:200]}")
     return parse_tsv(proc.stdout)
 
 
+def _needs_translation(seg: str) -> bool:
+    """片段是否含值得送翻译的英文(≥3 字母且含元音)。"""
+    s = seg.strip()
+    letters = len(_LETTER.findall(s))
+    return letters >= 3 and bool(_VOWEL.search(s))
+
+
 def translate_paragraphs(
     paragraphs: list[str], orch: Any, *, workers: int = 4
 ) -> list[dict[str, Any]]:
-    """逐段过翻译管线(缓存→词典→规则→LLM→验证), 线程池并行。
+    """逐段翻译(中英混排感知), 线程池并行。
+
+    游戏屏常为已汉化 UI + 残留英文混排: 按中文/英文切片,
+    **中文段原样保留(折叠伪空格), 仅英文段送管线**, 结果拼成完整中文内容。
+    全中文段直接透传, 不耗 LLM。
 
     交互式截图可能有 10+ 段新句子, 串行 LLM 往返要数分钟;
     并行(默认 4 线程)把墙钟时间压到 1/4。
@@ -148,14 +205,37 @@ def translate_paragraphs(
     def _one(text: str) -> dict[str, Any]:
         if getattr(local, "orch", None) is None:
             local.orch = factory()
-        r = local.orch.translate(text, context={"source": "screenshot"})
+        runs = split_runs(text)
+        # 无需翻译的英文碎片也归入保留段; 全保留 → 透传不耗 LLM
+        if all(is_cjk or not _needs_translation(seg) for is_cjk, seg in runs):
+            return {
+                "en": collapse_cjk_spaces(text),
+                "zh": collapse_cjk_spaces(text),
+                "model": "",
+                "provider": "passthrough",
+                "confidence": 1.0,
+                "error": None,
+            }
+        o = local.orch
+        parts: list[str] = []
+        last: Any = None
+        errors: list[str] = []
+        for is_cjk, seg in runs:
+            if is_cjk or not _needs_translation(seg):
+                parts.append(collapse_cjk_spaces(seg).strip())
+                continue
+            r = o.translate(seg.strip(), context={"source": "screenshot"})
+            last = r
+            if getattr(r, "error", None):
+                errors.append(str(r["error"]) if isinstance(getattr(r, "error", None), str) else repr(r.error))
+            parts.append(r.text.strip())
         return {
-            "en": text,
-            "zh": r.text,
-            "model": getattr(r, "model", ""),
-            "provider": getattr(r, "provider", ""),
-            "confidence": getattr(r, "confidence", 0.0),
-            "error": getattr(r, "error", None),
+            "en": collapse_cjk_spaces(text),
+            "zh": "".join(parts),
+            "model": getattr(last, "model", "") if last else "",
+            "provider": getattr(last, "provider", "") if last else "",
+            "confidence": getattr(last, "confidence", 0.0) if last else 0.0,
+            "error": "; ".join(errors) if errors else None,
         }
 
     if not paragraphs:

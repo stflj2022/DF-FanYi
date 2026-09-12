@@ -14,8 +14,10 @@ from df_fanyi.cli import build_parser
 from df_fanyi.shot import (
     OcrWord,
     assemble_paragraphs,
+    collapse_cjk_spaces,
     parse_tsv,
     render_markdown,
+    split_runs,
     translate_paragraphs,
 )
 
@@ -102,6 +104,17 @@ class TestAssembleParagraphs:
         ]
         assert assemble_paragraphs(noise) == []
 
+    def test_chinese_paragraph_accepted(self):
+        # 已汉化 UI 混排段不应被英文噪声过滤器丢掉
+        words = [
+            OcrWord(1, 1, 1, 0, 90.0, "加"),
+            OcrWord(1, 1, 1, 20, 90.0, "能"),
+            OcrWord(1, 1, 1, 40, 90.0, "区"),
+            OcrWord(1, 1, 1, 60, 88.0, "are"),
+            OcrWord(1, 1, 1, 80, 88.0, "placed"),
+        ]
+        assert assemble_paragraphs(words) == ["加 能 区 are placed"]
+
     def test_dedupe_and_cap(self):
         words = []
         for i in range(20):
@@ -117,6 +130,22 @@ class TestAssembleParagraphs:
         pars = assemble_paragraphs(words, max_par=12)
         assert len(pars) == 12
         assert len(set(pars)) == 12
+
+
+class TestSplitRuns:
+    def test_mixed_split(self):
+        runs = split_runs("加能区 are placed 加能区")
+        assert runs == [(True, "加能区"), (False, " are placed "), (True, "加能区")]
+
+    def test_pure_english_one_run(self):
+        assert split_runs("The dog bites.") == [(False, "The dog bites.")]
+
+    def test_pure_chinese_one_run(self):
+        assert split_runs("地点已汉化") == [(True, "地点已汉化")]
+
+    def test_collapse_cjk_spaces(self):
+        assert collapse_cjk_spaces("加 能 区 是") == "加能区是"
+        assert collapse_cjk_spaces("The dog") == "The dog"  # 英文空格保留
 
 
 class TestTranslateParallel:
@@ -137,6 +166,29 @@ class TestTranslateParallel:
         def translate(self, text, context=None):
             self.calls.append(text)
             return TestTranslateParallel._Result(f"[{text}]")
+
+    def test_mixed_chinese_kept_english_replaced(self):
+        """中英混排: 中文段原样保留, 仅英文段送翻译, 拼成完整内容。"""
+        orch = self._FakeOrch()  # translate(text) -> f"[{text}]"
+        out = translate_paragraphs(["加能区 are placed 加能区"], orch)
+        assert out[0]["zh"] == "加能区[are placed]加能区"
+        assert out[0]["en"] == "加能区 are placed 加能区"
+        assert "are placed" in orch.calls
+
+    def test_all_chinese_passthrough_no_llm(self):
+        orch = self._FakeOrch()
+        out = translate_paragraphs(["地 点 已 汉 化"], orch)
+        assert out[0]["zh"] == "地点已汉化"
+        assert out[0]["provider"] == "passthrough"
+        assert orch.calls == []  # 未耗 LLM
+
+    def test_short_english_fragments_kept(self):
+        """过短英文碎片(如 OCR 残片 x, ab)不值得送翻译, 原样保留。"""
+        orch = self._FakeOrch()
+        out = translate_paragraphs(["中文x 中文y keep"], orch)
+        # y 和 keep 之间无中文 → 同一连续英文段一起送翻; x 单独过短保留
+        assert orch.calls == ["y keep"]
+        assert out[0]["zh"].startswith("中文")
 
     def test_shared_instance(self):
         orch = self._FakeOrch()

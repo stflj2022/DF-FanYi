@@ -378,6 +378,17 @@ while true; do
             echo 0 > "$LOG_DIR/.fail_streak"
             auto_commit "Auto checkpoint - Round $ROUND"
         else
+            # GUARD:quota-pause — 保险①: 仅失败轮才查(router 已自动切智谱兜底,
+            # 这里触发=双供应商都额度耗尽), 成功轮输出含"额度"字样不误报
+            if quota_hit; then
+                RESUME_AT=$(( $(date +%s) + 18000 ))
+                echo "$RESUME_AT" > "$LOG_DIR/PAUSED_QUOTA"
+                log_error "双供应商额度耗尽(429/quota) → 暂停至 $(date -d @$RESUME_AT '+%F %T'), 窗口重置后自动续跑"
+                notify-send --app-name=DF-FanYi --urgency=critical -t 0 \
+                    "⏸ DF-FanYi 无人值守暂停" \
+                    "MiniMax+智谱额度均耗尽, 5h 窗口重置后自动续跑: $(date -d @$RESUME_AT '+%H:%M')\n工单进度已保存, 无需人工干预" 2>/dev/null || true
+                exit 0
+            fi
             STREAK=$(( $(cat "$LOG_DIR/.fail_streak" 2>/dev/null || echo 0) + 1 ))
             echo "$STREAK" > "$LOG_DIR/.fail_streak"
             if [ "$STREAK" -ge 3 ]; then
@@ -399,17 +410,6 @@ while true; do
     fi
 
     # Detect issues and handle
-    # GUARD:quota-pause — 保险①: 额度耗尽 → 暂停到下个5h窗口, watchdog 到点自动拉起
-    if quota_hit; then
-        RESUME_AT=$(( $(date +%s) + 18000 ))
-        echo "$RESUME_AT" > "$LOG_DIR/PAUSED_QUOTA"
-        log_error "额度耗尽(429/quota) → 暂停至 $(date -d @$RESUME_AT '+%F %T'), 窗口重置后自动续跑"
-        notify-send --app-name=DF-FanYi --urgency=critical -t 0 \
-            "⏸ DF-FanYi 无人值守暂停" \
-            "额度耗尽, 5小时窗口重置后自动续跑: $(date -d @$RESUME_AT '+%H:%M')\n工单进度已保存, 无需人工干预" 2>/dev/null || true
-        exit 0
-    fi
-
     if ctx_hit; then
         log "⚠️ Context overflow, starting fresh session"
         save_checkpoint "context_overflow" "Context full" "Restart fresh" "Round $ROUND"

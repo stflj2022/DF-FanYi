@@ -170,8 +170,8 @@ end
 
 -- ---------- 模拟 DFHack 环境 ----------
 local M = {
-    df_version = '53.16',
-    dfhack_version = '53.16-r1.1',
+    df_version = 'v0.53.06 STEAM win64',
+    dfhack_version = '53.06-r1.1',
     engine_up = false,
     sent_lines = {},
     server_buffer = '',
@@ -316,6 +316,8 @@ env.dfhack = {
         for _, ent in ipairs(M.frames) do if ent then compact[#compact+1] = ent end end
         M.frames = compact
     end,
+    -- onStateChange hook 表(fanyi.lua fanyi_install_state_hooks 需要)
+    onStateChange = {},
 }
 env.dfhack_flags = {}
 env.df = {

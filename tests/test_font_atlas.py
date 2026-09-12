@@ -94,29 +94,18 @@ def test_emit_atlas_index_and_png(tmp_path):
 # ---- 已提交图集(游戏侧实际加载物, stdlib 校验) ------------------------------
 
 
-def test_committed_atlas_exists_and_consistent():
-    index_path = ATLAS_DIR / "index.json"
-    assert index_path.exists(), "dfhack/data/fanyi-font/index.json 必须随仓库提交"
-    index = json.loads(index_path.read_text(encoding="utf-8"))
-    assert index["tile_w"] == 8 and index["tile_h"] == 12  # classic 53.16 网格
-    seen: set[int] = set()
-    for page in index["pages"]:
-        assert page["count"] == len(page["cps"])
-        assert len(page["cps"]) <= page["cols"] * page["rows"]
-        png = ATLAS_DIR / page["png"]
-        data = png.read_bytes()
-        assert data[:8] == b"\x89PNG\r\n\x1a\n"
-        width, height = struct.unpack(">II", data[16:24])
-        assert width == page["cols"] * 8, "页宽必须等于 cols*tile_w"
-        assert height == page["rows"] * 12, "页高必须等于 rows*tile_h"
-        seen.update(page["cps"])
-    assert 0x20 in seen and ord("矮") in seen, "ASCII 与常用汉字必须入集"
-    assert len(seen) == sum(len(p["cps"]) for p in index["pages"]), "codepoint 不得跨页重复"
+def test_committed_atlas_removed():
+    """ticket-012: 字幕条图集已随字幕条 overlay 一并删除。
+
+    fanyi-font 目录(4 页字形贴图 + index.json + 许可证)不得再存在;
+    生成器本身保留(ticket-013 会以 --subset 子集模式重新产出 textviewer-font)。
+    """
+    assert not ATLAS_DIR.exists(), (
+        "dfhack/data/fanyi-font/ 应已删除(ticket-012); "
+        "若 ticket-013 重新生成, 应输出到 dfhack/data/textviewer-font/, 不是本目录"
+    )
 
 
-def test_committed_atlas_has_license():
-    """SIL OFL 1.1 字体再分发要求随附许可(见 REUSE_PLAN §6)。"""
-    lic = ATLAS_DIR / "LICENSE-OFL.txt"
-    assert lic.exists()
-    text = lic.read_text(encoding="utf-8", errors="replace")
-    assert "SIL OPEN FONT LICENSE" in text.upper()
+def test_committed_atlas_license_removed():
+    """ticket-012: 图集已删, 许可证随目录一同移除(生成器内仍存 OFL 声明)。"""
+    assert not (ATLAS_DIR / "LICENSE-OFL.txt").exists()

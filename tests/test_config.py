@@ -98,11 +98,14 @@ def test_api_key_read_only_from_env(monkeypatch: pytest.MonkeyPatch, tmp_path: P
 
 
 def test_local_provider_available_without_key() -> None:
-    """本地 ollama 无 key: enabled 即可用。"""
+    """本地 ollama 无 key 语义: 2026-09-10 起用户决策停用本地兜底,
+    default.yaml 里 enabled: false → available 必须为 False(云端唯一)。
+    """
     ollama = [p for p in cfg().providers if p.name == "ollama"]
     assert ollama, "default.yaml 必须含本地 ollama provider"
     assert ollama[0].api_key_env == ""
-    assert ollama[0].available is True
+    assert ollama[0].enabled is False, "ollama 已退役(云端唯一决策)"
+    assert ollama[0].available is False
 
 
 def test_disabled_provider_not_available(tmp_path: Path) -> None:

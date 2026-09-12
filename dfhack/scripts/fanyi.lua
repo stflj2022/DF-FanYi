@@ -52,10 +52,10 @@ S.config = S.config or {
     tick_frames = 12,       -- 主轮询节拍(~0.2s@60fps)
     retry_frames = 90,      -- 重连起始间隔(帧), 指数退避 ×2 至 900
     max_send_per_tick = 3,  -- 每节拍最多发送的待发事件数
-    -- 字幕条目存活期(ms): 过期清空, 避免"死字幕"常驻遮挡。
-    -- 2026-09-11 用户要求"几秒后自动消失不挡按钮": 90s→15s; 11:55 调至 40s 便于读完整句,
-    -- 可用环境变量 FANYI_TTL_MS 覆盖(启动游戏前 export)。
-    render_ttl_ms = tonumber(os.getenv('FANYI_TTL_MS')) or 40000,
+    -- ticket-012: 字幕条已删除. FANYI_TTL_MS 环境变量名保留为公共约定,
+    -- 供后续 ticket-013/014 inline overlay TTL 使用(13/14 可选读此 env var).
+    -- 启动时仍解析此 env var(避免被外层覆盖脚本误以为已删除), 但不再用于字幕.
+    fanyi_ttl_ms = tonumber(os.getenv('FANYI_TTL_MS')) or 40000,
 }
 local C = S.config
 
@@ -76,10 +76,8 @@ S.timer_euid = S.timer_euid or nil
 S.tick = S.tick or 0
 S.stats = S.stats or {captured=0, sent=0, recv=0, done=0, failed=0, reconnect=0}
 S.readbuf = S.readbuf or ''       -- 行拆解缓冲(响应聚合)
-S.render_lines = S.render_lines or {}   -- 准备绘制的 {text, confidence, ts=now_ms}
-S.overlays_on = S.overlays_on or false
-S.render_cjk = S.render_cjk or false
-S.font = S.font or {installed = false, tile_w = 8, tile_h = 12, scale = 1, by_cp = {}}
+-- ticket-012: 字幕条相关状态字段已删除(S.render_lines / S.overlays_on /
+-- S.render_cjk / S.font). 译文渲染改由 ticket-013/014 的内嵌 overlay 接管.
 S.last_error = S.last_error or ''
 S.gamelog = S.gamelog or {enabled=true, path=nil}
 S.seen_tv_hashes = S.seen_tv_hashes or {}  -- textviewer 弹窗内容去重(哈希)
@@ -428,18 +426,16 @@ local function handle_response(line)
             ack_event(rec.event_id)
             if rec.status == 'done' then
                 S.stats.done = S.stats.done + 1
-                if not S.displayed[rec.event_id]
-                   and rec.confidence and rec.confidence > 0
-                   and rec.translated_text and rec.translated_text ~= '' then
-                    S.render_lines[#S.render_lines + 1] = {
-                        event_id = rec.event_id,
-                        text = rec.translated_text,
-                        confidence = rec.confidence,
-                        ts = now_ms(),
-                    }
-                    if #S.render_lines > 12 then table.remove(S.render_lines, 1) end
+                -- ticket-012: 字幕条已删除, 此处不再 push S.render_lines.
+                -- ticket-013/014 的 inline overlay widget 会自行从 S.displayed 读取
+                -- event_id, 调用 fanyi_fetch_translation() 取得译文文本(数据路径
+                -- 不变, 仅消费者从"统一字幕条"变成"按 viewscreen 定位的 widget").
+                if not S.displayed[rec.event_id] and rec.confidence
+                    and rec.confidence > 0 and rec.translated_text
+                    and rec.translated_text ~= '' then
                     S.displayed[rec.event_id] = true
-                    flog('字幕+1 [' .. tostring(rec.event_id) .. '] ' .. (rec.translated_text:sub(1, 60)):gsub('%s+', ' '))
+                    flog('done [' .. tostring(rec.event_id) .. '] '
+                        .. (rec.translated_text:sub(1, 60)):gsub('%s+', ' '))
                 end
             elseif rec.status == 'failed' then
                 S.stats.failed = S.stats.failed + 1  -- §2.3: 静默原文
@@ -451,17 +447,11 @@ local function handle_response(line)
         ack_event(result.event_id)
         S.stats.done = S.stats.done + 1
         if not S.displayed[result.event_id]
-           and result.confidence and result.confidence > 0
-           and result.translated_text and result.translated_text ~= '' then
-            S.render_lines[#S.render_lines + 1] = {
-                event_id = result.event_id,
-                text = result.translated_text,
-                confidence = result.confidence,
-                ts = now_ms(),
-            }
-            if #S.render_lines > 12 then table.remove(S.render_lines, 1) end
+            and result.confidence and result.confidence > 0
+            and result.translated_text and result.translated_text ~= '' then
             S.displayed[result.event_id] = true
-            flog('字幕+1 [' .. tostring(result.event_id) .. '] ' .. (result.translated_text:sub(1, 60)):gsub('%s+', ' '))
+            flog('done [' .. tostring(result.event_id) .. '] '
+                .. (result.translated_text:sub(1, 60)):gsub('%s+', ' '))
         end
     elseif result.status == 'failed' or (result.error and result.error ~= '') then
         ack_event(result.event_id)
@@ -470,341 +460,13 @@ local function handle_response(line)
     end
 end
 
--- 渲染载荷(纯函数, 与 overlay 解耦; CJK 字形未就绪时输出空 → 不绘制) -----------
-
-function fanyi_render_lines()
-    if not S.render_cjk then return '' end  -- CJK 门控关闭 → 空载荷(§2.3 静默原文)
-    local payload = fanyi_render_payload(8)
-    if #payload == 0 then return '' end
-    local parts = {}
-    for _, row in ipairs(payload) do parts[#parts + 1] = row.text end
-    return table.concat(parts, '\n')
+-- 渲染载荷(纯函数, 与 overlay 解耦; ticket-012 字幕条删除后, 此函数仅保留
+-- 签名供 ticket-013/014 的 textviewer_inline / announcement_inline 复用。
+-- 当前实现返回空载荷, 真正绘制由 13/14 的 inline overlay widget 完成。
+-- 数据契约: 返回 {{text=string, confidence=number}, ...}; 长度 0 = 无内容)
+function fanyi_render_inline_payload()
+    return {}
 end
-
--- 剥离 DF 颜色/格式标记([C:R:G:B]/[B]/[VAR:..]/[P:..]), 保留字面方括号文本
--- (如 "[需要燃料]")。引擎提示词会“保留标记(markup)”, 但字幕条是纯文本
--- 渲染, 标记需在换行/贴图前剥离, 否则屏幕显示 [C:7:0:1] 这类乱字(2026-09-11)。
-local DF_MARKUP_RE = '%[C:%d+:%d+:%d+%]'  -- [C:7:0:1]
-local function fanyi_strip_df_markup(text)
-    if not text or #text == 0 then return text end
-    -- 先剥颜色标记, 再剥剩余 [B]/[VAR:]/[P:] 格式(不匹配的字面方括号保留)
-    local t = text:gsub(DF_MARKUP_RE, '')
-    t = t:gsub('%[B%]', '')
-    t = t:gsub('%[VAR:[^%[%]]*%]', '')
-    t = t:gsub('%[P:%d+:[^%[%]]*%]', '')
-    return t
-end
-
--- UTF-8 感知换行: 一段文本按字符数拆成 ≤max_cols 的行(优先在空格处断行)
-function fanyi_wrap_line(text, max_cols)
-    text = fanyi_strip_df_markup(text)
-    local cps = fanyi_utf8_codepoints(text)
-    if #cps <= max_cols then return {text} end
-    local rows = {}
-    local start_i = 1
-    while start_i <= #cps do
-        local end_i = math.min(start_i + max_cols - 1, #cps)
-        if end_i < #cps then
-            -- 窗口内找最后一个空格作断点(至少保留 30% 长度, 防碎行)
-            local space_i = end_i
-            while space_i > start_i + math.floor(max_cols * 0.3) and cps[space_i] ~= 32 do
-                space_i = space_i - 1
-            end
-            if cps[space_i] == 32 then end_i = space_i end
-        end
-        local seg = {}
-        for i = start_i, end_i do seg[#seg + 1] = utf8.char(cps[i]) end
-        rows[#rows + 1] = table.concat(seg)
-        start_i = end_i + 1
-    end
-    return rows
-end
-
--- 渲染载荷(行列表, 底部字幕条数据源; 与贴图/overlay 完全解耦, 可无头断言)。
--- 长译文(如 textviewer 整页)先按 '\n' 拆段再按宽度换行; 从最新条目回填,
--- 装满 max_rows 为止(新内容优先显示)。
-function fanyi_render_payload(max_rows, max_cols)
-    if not S.overlays_on then return {} end
-    if #S.render_lines == 0 then return {} end
-    max_rows = max_rows or 8
-    max_cols = max_cols or 60
-    local groups = {}
-    local used = 0
-    for i = #S.render_lines, 1, -1 do
-        local rows = {}
-        for seg in (S.render_lines[i].text .. '\n'):gmatch('([^\n]*)\n') do
-            if #seg > 0 then
-                for _, r in ipairs(fanyi_wrap_line(seg, max_cols)) do
-                    rows[#rows + 1] = r
-                end
-            end
-        end
-        if used + #rows > max_rows and used > 0 then break end  -- 旧条目放不下
-        if used + #rows > max_rows then                          -- 单条超行: 只留最新
-            while #rows > max_rows do table.remove(rows, 1) end
-        end
-        table.insert(groups, 1, rows)  -- 头插恢复时间正序
-        used = used + #rows
-        if used >= max_rows then break end
-    end
-    local out = {}
-    for _, rows in ipairs(groups) do
-        for _, r in ipairs(rows) do
-            out[#out + 1] = {text = r, confidence = 1}
-        end
-    end
-    return out
-end
-
--- CJK 字形贴图(ticket-009): UTF-8 解码 + 图集装载 + 贴图坐标 ------------------
-
--- UTF-8 → codepoint 表(自实现, 不依赖 DFHack Lua 编译选项; 非法序列→U+FFFD)
-function fanyi_utf8_codepoints(s)
-    local out = {}
-    local i, n = 1, #s
-    while i <= n do
-        local b1 = s:byte(i)
-        local cp, extra
-        if b1 < 0x80 then cp, extra = b1, 0
-        elseif b1 >= 0xC2 and b1 < 0xE0 then cp, extra = b1 - 0xC0, 1
-        elseif b1 >= 0xE0 and b1 < 0xF0 then cp, extra = b1 - 0xE0, 2
-        elseif b1 >= 0xF0 and b1 < 0xF5 then cp, extra = b1 - 0xF0, 3
-        else cp, extra = 0xFFFD, 0 end
-        local ok = true
-        for k = 1, extra do
-            local b = s:byte(i + k)
-            if b and b >= 0x80 and b < 0xC0 then
-                cp = cp * 0x40 + (b - 0x80)
-            else
-                ok = false
-                break
-            end
-        end
-        if not ok then cp = 0xFFFD end
-        out[#out + 1] = cp
-        i = i + (ok and (extra + 1) or 1)
-    end
-    return out
-end
-
--- 装载字形图集(hack/data/fanyi-font/): index.json + loadTileset 注册纹理页。
--- 成功后 S.font.by_cp[codepoint]=TexposHandle(或 scale=1 单 handle); 任何失败
--- → installed=false(门控静默原文)。
--- ⚠️ 2026-09-11 重大修复: 必须存 handle, 贴图时实时 getTexposByHandle 解析。
--- 原因: DFHack reserved 纹理缓冲仅 10000 格, 本图集 4页×4096格=16384格,
--- 装不下的页静默落到 dynamic 范围; DF 每次**世界加载**会 reset_texpos() 清空
--- dynamic 映射, 之后旧 texpos 数值指向重新分配后的别人家纹理 → 屏幕乱字/
--- 微缩图(用户看到“字变小+胡言乱语”)。handle 是稳定引用, 实时解析后
--- dynamic 纹理被 reset 后会自动重新注册(dfx Textures.cpp g_handle_to_surface 分支)。
-function fanyi_font_load()
-    local tex = dfhack.textures
-    if not (tex and tex.loadTileset and tex.getTexposByHandle) then
-        S.font.installed = false
-        return false, 'dfhack.textures API 不可用'
-    end
-    local dir = (dfhack.getDFPath and dfhack.getDFPath() or '.') .. '/hack/data/fanyi-font/'
-    local fh = io.open(dir .. 'index.json', 'r')
-    if not fh then
-        S.font.installed = false
-        return false, '未安装字形图集(' .. dir .. '; scripts/generate_font_atlas.py 产出)'
-    end
-    local data = fh:read('*a')
-    fh:close()
-    local ok, index = pcall(JSON.decode, data)
-    if not ok or type(index) ~= 'table' or type(index.pages) ~= 'table' then
-        S.font.installed = false
-        return false, 'index.json 解析失败'
-    end
-    local by_cp = {}
-    local scale = tonumber(index.scale) or 1
-    for _, page in ipairs(index.pages) do
-        local handles = tex.loadTileset(
-            dir .. page.png, index.tile_w or 8, index.tile_h or 12, true)
-        if type(handles) ~= 'table' then
-            S.font.installed = false
-            return false, 'loadTileset 失败: ' .. tostring(page.png)
-        end
-        for i, cp in ipairs(page.cps) do
-            if scale == 2 then
-                -- 大字模式: 每字占 scale²=4 格(行优先 TL,TR,BL,BR), 与
-                -- generate_font_atlas.py 的网格布局严格对应 —— 生成端字 i(0基)
-                -- 起始 tile = i*2(每字占 2 列), 故读取端字 i(1基) 起始 tile =
-                -- (i-1)*2, 四片 = [t, t+1, t+cols, t+cols+1](BL/BR 换行下一行).
-                -- ⚠️ 曾误用 base=(i-1)*4 取连续 4 格, 导致每个汉字都贴成
-                -- 别的字形的 1/4 切片拼图 = 屏幕“乱码”(2026-09-11 已修).
-                local t = (i - 1) * 2
-                local cols = tonumber(page.cols) or index.cols or 64
-                by_cp[cp] = {
-                    handles[t + 1], handles[t + 2],
-                    handles[t + cols + 1], handles[t + cols + 2],
-                }
-            else
-                by_cp[cp] = handles[i]
-            end
-        end
-    end
-    S.font.tex = tex
-    S.font.by_cp = by_cp
-    S.font.tile_w = index.tile_w or 8
-    S.font.tile_h = index.tile_h or 12
-    S.font.scale = scale
-    S.font.installed = true
-    fanyi_dump_texpos_diag('load')  -- 装载后立即采样真实 texpos
-    return true
-end
-
--- 哈希表显式计数(`#` 对非数组未定义 —— ticket-008 已踩坑, 严禁回归)
-function fanyi_count_map(t)
-    local n = 0
-    for _ in pairs(t) do n = n + 1 end
-    return n
-end
-
--- 自动 texpos 诊断(2026-09-11): 启动时把关键字形 handle→texpos 数值写日志。
--- Steam 启动无法在游戏内执行 painttest 命令, 故做成全自动: 用户重启游戏即可,
--- 无需任何操作。读日志即可判定游戏内 texpos↔字形映射是否异常。
--- 判读: 若某字形四片 texpos 连续/顺序(如 a,a+1,..) 说明行优先连续正常;
--- 若 texpos 为 0/负数/跳变 → 纹理映射异常(乱字根因)。
-function fanyi_dump_texpos_diag(tag)
-    local ok, err = pcall(function()
-        local resolve = S.font.tex and S.font.tex.getTexposByHandle
-        if not resolve then
-            flog(('texpos_diag[%s]: 图集未装载或解析器不可用'):format(tag))
-            return
-        end
-        local probe = {33, 20154, 27700, 27704}  -- '!' 才 水 永 (分散不同页/格)
-        local parts = {}
-        for _, cp in ipairs(probe) do
-            local h = S.font.by_cp[cp]
-            if type(h) == 'table' then
-                local tp = {}
-                for _, hh in ipairs(h) do tp[#tp+1] = resolve(hh) end
-                parts[#parts+1] = ('U+%04X(四片)=%s'):format(cp, table.concat(tp, ','))
-            elseif h then
-                parts[#parts+1] = ('U+%04X=%d'):format(cp, resolve(h))
-            else
-                parts[#parts+1] = ('U+%04X=缺'):format(cp)
-            end
-        end
-        flog(('texpos_diag[%s]: %s'):format(tag, table.concat(parts, '; ')))
-    end)
-    if not ok then flog('texpos_diag 异常: ' .. tostring(err)) end
-end
-
--- 贴图绘制(纯逻辑, dc 由调用方注入; 返回绘制格数): 底部对齐逐字贴 texpos,
--- 缺字形跳格(保持与源文同宽对齐); 只在渲染回调内被 overlay 框架调用。
--- 2026-09-11 大字模式(scale=2): 每字贴 2x2 格(16x24 像素), 换行宽度减半;
--- 字幕存活 40s(FANYI_TTL_MS 可调), 过期自动消失不挡按钮。
-function fanyi_paint_subtitle(dc, max_cols, max_rows)
-    if not (S.overlays_on and S.render_cjk and S.font.installed) then return 0 end
-    local scale = S.font.scale or 1
-    local resolve = S.font.tex and S.font.tex.getTexposByHandle or nil
-    if not resolve then return 0 end  -- 无解析器(异常态)不贴, 防旧 texpos 乱贴
-    -- scale=2 贴四片辅助(scale=1 贴单片); 返回 true=至少贴了一格
-    local function scale2tile(dc, h, x, y)
-        if not h then return false end
-        if scale == 2 and type(h) == 'table' then
-            -- 实时解析 texpos(见 fanyi_font_load 注释): 世界加载 reset 后
-            -- dynamic 纹理自动重注册; tp<=0(loading 中/delayed)跳格不乱贴。
-            local tp1 = resolve(h[1])
-            local tp2 = resolve(h[2])
-            local tp3 = resolve(h[3])
-            local tp4 = resolve(h[4])
-            if tp1 and tp1 > 0 and tp2 and tp2 > 0
-                and tp3 and tp3 > 0 and tp4 and tp4 > 0 then
-                dc:seek(x, y):tile(' ', tp1)
-                dc:seek(x + 1, y):tile(' ', tp2)
-                dc:seek(x, y + 1):tile(' ', tp3)
-                dc:seek(x + 1, y + 1):tile(' ', tp4)
-                return true
-            end
-            return false
-        elseif type(h) ~= 'table' then
-            local tp = resolve(h)
-            if tp and tp > 0 then
-                dc:seek(x, y):tile(' ', tp)
-                return true
-            end
-        end
-        return false
-    end
-    -- painttest 诊断模式: 贴固定测试字串(永水人才出汆), 验证游戏内映射
-    if S.painttest_until and os.clock() < S.painttest_until then
-        local x = 1
-        for _, cp in ipairs(fanyi_utf8_codepoints('永水人才出汆')) do
-            scale2tile(dc, S.font.by_cp[cp], x, max_rows - 2)
-            x = x + 2
-        end
-        return x
-    end
-    -- 周期性 texpos 采样(每 5 秒): 截图/报告乱字时日志已有真实映射数据
-    if not S._diag_last or now_ms() - S._diag_last > 5000 then
-        S._diag_last = now_ms()
-        fanyi_dump_texpos_diag('paint')
-    end
-    -- 字幕自然过期: 长时间无新译文 → 清空(避免"死字幕"常驻遮挡的观感)
-    local now = now_ms()
-    for i = #S.render_lines, 1, -1 do
-        if now - (S.render_lines[i].ts or 0) > C.render_ttl_ms then
-            table.remove(S.render_lines, i)
-        end
-    end
-    local vis_rows = math.floor(max_rows / scale)              -- 视觉行数(大字模式行高加倍)
-    local payload = fanyi_render_payload(vis_rows,
-        math.floor(max_cols / scale))                           -- 换行宽度按字宽折算
-    if #payload == 0 then return 0 end
-    local base_row = max_rows - #payload * scale  -- 底部对齐(含行高加倍)
-    local painted = 0
-    for ri, line in ipairs(payload) do
-        local x = 0
-        local row_y = base_row + (ri - 1) * scale
-        for _, cp in ipairs(fanyi_utf8_codepoints(line.text)) do
-            if x + scale > max_cols then break end
-            local h = S.font.by_cp[cp]
-            if scale2tile(dc, h, x, row_y) then painted = painted + (scale == 2 and 4 or 1) end
-            x = x + scale
-        end
-    end
-    return painted
-end
-
--- overlay 字幕条小部件(官方 overlay 插件)。
--- 位置教训(2026-09-10): 默认右下 {x=-2,y=-2} 60x8 正好压住 embark 准备界面
--- 的出发按钮(用户实锤被挡) → 改左下偏上左边缘。
--- 2026-09-11 用户反馈字太小看不清 → 大字图集(scale=2, 每字 16x24 像素),
--- frame 42x5→64x10; 又反馈框体太小显示不全(用户明确"框体更大也没关系,
--- 只要能自动消失") → 96x14(视觉 7 行, 48 汉字/行), 存活 90s→15s。
--- widget 不拦鼠标(focusable=false 默认), 遮挡仅限有字形的格子;
--- 用户可用 `overlay reposition fanyi.subtitle` 自由拖位(持久化 overlay.json,
--- 自调位置优先于 default_pos)。
--- 渲染只在 onRenderBody 回调内发生(§29: 不占主循环); 门控关闭时不画任何像素。
-FanyiSubtitle = defclass(FanyiSubtitle, overlay.OverlayWidget)
-FanyiSubtitle.ATTRS = FanyiSubtitle.ATTRS or {}
-FanyiSubtitle.ATTRS.desc = 'DF-FanYi 中文译文悬浮(字幕条, fanyi overlays on cjk)'
-FanyiSubtitle.ATTRS.default_pos = {x = 0, y = -15}
-FanyiSubtitle.ATTRS.default_enabled = false
-FanyiSubtitle.ATTRS.viewscreens = 'all'
--- 固定大小(2026-09-11 用户要求): 字幕框占屏幕约 1/3 面积(宽 1/2 × 高 2/3),
--- 行数固定不再随内容伸缩 —— 再长的字幕也能完整换行显示, 不会显示不全。
--- 尺寸在 init 时按实际屏幕字符格数计算; overlay reposition 只改位置不动尺寸。
-FanyiSubtitle.ATTRS.frame = {w = 96, h = 14}
-
-function FanyiSubtitle:init()
-    local sw, sh = dfhack.screen.getWindowSize()
-    if sw and sh and sw > 0 and sh > 0 then
-        -- 宽取屏幕一半(字幕横排, 宽度充足减少换行), 高取 2/3(容纳更多行),
-        -- 面积 ≈ 1/3 屏幕; 受 scale 影响行高, 但以字符格计即可(渲染内部折算)。
-        self.frame.w = math.max(40, math.floor(sw * 0.5))
-        self.frame.h = math.max(8, math.floor(sh * 2 / 3))
-    end
-end
-
-function FanyiSubtitle:onRenderBody(dc)
-    fanyi_paint_subtitle(dc, self.frame.w, self.frame.h)
-end
-
--- overlay 插件扫描脚本全局 OVERLAY_WIDGETS 注册小部件(名字: fanyi.subtitle)
-OVERLAY_WIDGETS = {subtitle = FanyiSubtitle}
 
 -- 主轮询节拍 ----------------------------------------------------------------
 
@@ -922,12 +584,10 @@ function fanyi_status_lines()
         ('  统计: 捕获=%d 发送=%d 接收=%d done=%d failed=%d 重连=%d'):format(
             S.stats.captured, S.stats.sent, S.stats.recv,
             S.stats.done, S.stats.failed, S.stats.reconnect),
-        ('  字幕: %s  CJK渲染: %s'):format(
-            S.overlays_on and '开' or '关',
-            S.render_cjk and ('就绪(' .. fanyi_count_map(S.font.by_cp) .. '字形)') or
-                (S.font.installed and '图集已装(未启用)' or '未启用(需 fanyi overlays on cjk)')),
-        ('  overlay小部件: fanyi.subtitle (%s)'):format(
-            overlay.isOverlayEnabled and tostring(overlay.isOverlayEnabled('fanyi.subtitle')) or '?'),
+        -- ticket-012: 字幕条 widget 已删除. status 输出明确告知替代方案:
+        -- 公告由 announcement_inline (13), textviewer 弹窗由 textviewer_inline (14).
+        ('  subtitle widget: removed (replaced by inline overlays) — '
+            .. 'announcement_inline: ticket-013, textviewer_inline: ticket-014'),
     }
     local n_tv = 0
     for _ in pairs(S.seen_tv_hashes) do n_tv = n_tv + 1 end
@@ -952,24 +612,6 @@ function fanyi_command(args)
     local cmd = args[1] or 'status'
     if cmd == 'status' then
         for _, l in ipairs(fanyi_status_lines()) do print(l) end
-    elseif cmd == 'painttest' then
-        -- 诊断: 直接贴互不形近的固定字符串, 验证游戏内 texpos↔字形映射。
-        -- 预期屏幕显示: 永水人才出汆 (若显示别的字 = 映射/顺序错)
-        if not (S.font.installed and S.font.tex) then print('字形图集未装载, 先 fanyi overlays on cjk') return end
-        S.painttest_until = os.clock() + 20  -- 显示 20 秒
-        local resolve = S.font.tex.getTexposByHandle
-        local probe = {}
-        for _, cp in ipairs({27704, 27700, 20154, 25165, 20986, 27766}) do  -- 永水人才出汆
-            local h = S.font.by_cp[cp]
-            probe[#probe+1] = (h and resolve(h) or -1)
-        end
-        local h1 = S.font.by_cp[33]   -- '!' page0 idx1 → 四片格 2,3,66,67
-        local seq = {}
-        if type(h1) == 'table' then
-            for _, hh in ipairs(h1) do seq[#seq+1] = resolve(hh) end
-        end
-        flog(('painttest: 测试字texpos=%s; 句柄!(四片)=%s'):format(table.concat(probe, ','), table.concat(seq, ',')))
-        print('painttest 已开启 20s(预期屏幕: 永水人才出汆); texpos 样本已写 fanyi-debug.log')
     elseif cmd == 'start' or cmd == 'enable' then
         if S.state == 'running' then print('已在运行') return end
         S.state = 'running'
@@ -979,7 +621,6 @@ function fanyi_command(args)
         fanyi_install_state_hooks()
         arm_timer()
         flog('fanyi start (捕获: 公告+游戏日志+文本弹窗)')
-        fanyi_dump_texpos_diag('start')
         print('fanyi 捕获已启动(公告+游戏日志+文本弹窗); 引擎离线时静默显示原文')
     elseif cmd == 'stop' or cmd == 'disable' then
         if S.state ~= 'running' then print('未运行') return end
@@ -989,40 +630,38 @@ function fanyi_command(args)
         flog('fanyi stop')
         print('fanyi 已停止')
     elseif cmd == 'overlays' then
+        -- ticket-012: 字幕条 widget 已删除. 命令语法变更:
+        --   fanyi overlays on|off [textviewer|announcement]
+        -- 后续 ticket-013/014 会分别注册 textviewer_inline / announcement_inline widget,
+        -- 命令参数对应到具体 inline overlay 的开关. 当前这两个 widget 未注册,
+        -- 给用户明确提示而非静默失败.
         local sub = args[2] or ''
-        if sub == 'on' then
-            S.overlays_on = true
-            if args[3] == 'cjk' then
-                if not S.font.installed then
-                    local ok, err = fanyi_font_load()
-                    if not ok then
-                        print('CJK 渲染不可用: ' .. err)
-                        print('仍以 ASCII 门控运行(游戏显示原文, §2.3)')
-                        return
-                    end
-                end
-                S.render_cjk = true
-                -- 官方路径启用小部件: overlay enable fanyi.subtitle(持久化 overlay.json)
-                -- rescan 只扫 module scripts(fanyi.lua 已带 @ module = true)
-                if overlay.rescan then pcall(overlay.rescan) end
-                if dfhack.run_command then
-                    pcall(dfhack.run_command, 'overlay', 'enable', 'fanyi.subtitle')
-                end
-                flog('overlays on cjk: 字形=' .. fanyi_count_map(S.font.by_cp))
-                print(('译文悬浮已开启(CJK 贴图就绪: %d 字形, tile %dx%d)')
-                    :format(fanyi_count_map(S.font.by_cp), S.font.tile_w, S.font.tile_h))
+        local which = args[3] or ''
+        if sub == '' or sub == 'help' then
+            print('用法: fanyi overlays on|off [textviewer|announcement]')
+            print('  textviewer:   弹窗(textviewer)区域覆盖中文 (ticket-013)')
+            print('  announcement: 公告面板覆盖中文 (ticket-014)')
+            print('  注: 字幕条 (subtitle / cjk) 已删除 — 见 fanyi status')
+        elseif sub == 'on' then
+            if which == 'cjk' then
+                print('字幕条已删除 (ticket-012). 请使用 textviewer 或 announcement.')
+            elseif which == 'textviewer' or which == 'announcement' then
+                print(('overlays on %s: 等待 ticket-013/014 注册 inline widget'):format(which))
             else
-                print('译文悬浮已开启(ASCII 可用; CJK 需字形图集: fanyi overlays on cjk)')
+                print('用法: fanyi overlays on|off [textviewer|announcement]')
             end
         elseif sub == 'off' then
-            S.overlays_on = false
-            flog('overlays off')
-            print('译文悬浮已关闭(游戏显示原文)')
+            if which == 'cjk' then
+                print('字幕条已删除 (ticket-012), 无需关闭.')
+            elseif which == 'textviewer' or which == 'announcement' then
+                print(('overlays off %s: 等待 ticket-013/014 注册 inline widget'):format(which))
+            else
+                print('译文悬浮已关闭(游戏显示原文)')
+            end
         else
-            print('用法: fanyi overlays on|off [cjk]')
+            print('用法: fanyi overlays on|off [textviewer|announcement]')
         end
     elseif cmd == 'clear' then
-        S.render_lines = {}
         S.displayed = {}
         S.recent_reports = {}
         S.recent_log_hashes = {}
@@ -1034,10 +673,9 @@ function fanyi_command(args)
     elseif cmd == 'debug' then
         print('pending=', #S.pending, 'inflight=', #S.sent,
               'readbuf=', #S.readbuf, 'retry_after=', S.retry_after)
-        print('displayed=', #S.render_lines, 'client=', S.client ~= nil, 'euid=', tostring(S.timer_euid))
-        print('font: installed=', S.font.installed, 'tile=', S.font.tile_w .. 'x' .. S.font.tile_h,
-              'scale=', S.font.scale or 1, 'glyphs=', fanyi_count_map(S.font.by_cp),
-              'ttl_ms=', C.render_ttl_ms)
+        print('displayed=', fanyi_count_map(S.displayed), 'client=', S.client ~= nil,
+              'euid=', tostring(S.timer_euid))
+        print('ttl_ms=', C.fanyi_ttl_ms)
         local n_tv = 0
         for _ in pairs(S.seen_tv_hashes) do n_tv = n_tv + 1 end
         print('textviewer 去重:', n_tv, 'debuglog=', tostring(S.debug_log.path))
@@ -1046,10 +684,10 @@ function fanyi_command(args)
 用法:
   fanyi status              状态/统计
   fanyi start|stop          启停捕获+轮询(--@ enable=true 默认自启)
-  fanyi overlays on|off    译文悬浮(off: 游戏显示原文 §2.3)
-  fanyi overlays on cjk    启用中文贴图(需字形图集 hack/data/fanyi-font/)
+  fanyi overlays on|off [textviewer|announcement]
+                            内嵌 overlay 开关 (字幕条已删除 ticket-012)
   fanyi clear              清空显示与去重
-  fanyi debug              内部细节(含字体图集状态)
+  fanyi debug              内部细节
 ]])
     end
 end

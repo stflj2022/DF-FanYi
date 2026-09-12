@@ -58,6 +58,9 @@ S.config = S.config or {
     -- 供后续 ticket-013/014 inline overlay TTL 使用(13/14 可选读此 env var).
     -- 启动时仍解析此 env var(避免被外层覆盖脚本误以为已删除), 但不再用于字幕.
     fanyi_ttl_ms = tonumber(os.getenv('FANYI_TTL_MS')) or 40000,
+    -- ticket-014: 公告译文缓存 TTL(90s; 工单§3 过期后 overlay 不再显示,
+    -- 原文自然显示, 避免翻译永远挂在面板上)
+    ann_ttl_ms = tonumber(os.getenv('FANYI_ANN_TTL_MS')) or 90000,
 }
 local C = S.config
 
@@ -90,6 +93,11 @@ if S.tv_on == nil then S.tv_on = true end  -- textviewer_inline 开关(默认开
 S.tv_font = S.tv_font or {installed = false}  -- 字形图集(hack/data/textviewer-font/)
 S.tv_want_inline = S.tv_want_inline or {}     -- event_id → {text, title}(待发 inline 请求)
 S.tv_inline_sent = S.tv_inline_sent or {}     -- event_id → true(inline_translate 已请求去重)
+-- ticket-014: 公告面板内嵌翻译覆盖层状态
+S.ann_cache = S.ann_cache or {}        -- event_id('report-*') → {text, ts}(译文, TTL=ann_ttl_ms)
+if S.ann_on == nil then S.ann_on = true end  -- announcement_inline 开关(默认开; 无缓存/图集缺失时静默原文)
+S.ann_want_inline = S.ann_want_inline or {}  -- event_id → {text}(待发 inline_translate, context=announcement)
+S.ann_inline_sent = S.ann_inline_sent or {}  -- event_id → true(已请求去重)
 S.debug_log = S.debug_log or {path = nil}  -- 轻量文件日志(游戏目录 fanyi-debug.log)
 S.last_vs_fingerprint = S.last_vs_fingerprint or ''  -- viewscreen 链类名指纹(变化时落盘)
 
@@ -188,6 +196,11 @@ local function ensure_capture()
                     source_hash = fnv1a(text),
                     game_version = dfhack.getDFVersion(),
                 })
+                -- ticket-014: 登记 inline 路由请求(context=announcement;
+                -- flush 时若常规队列已覆盖(S.sent)则跳过, 同文本不双发)
+                if not S.ann_inline_sent['report-' .. id] then
+                    S.ann_want_inline['report-' .. id] = {text = dfhack.df2console(text)}
+                end
             end
             EV.enableEvent(EV.eventType.REPORT, 1)
             S.eventful_hooked = true
@@ -232,6 +245,11 @@ local function capture_from_containers()
                         source_hash = fnv1a(rep.text),
                         game_version = dfhack.getDFVersion(),
                     })
+                    -- ticket-014: 登记 inline 路由(同 onReport; 引擎段落缓存让
+                    -- 重复文本的公告秒回, 不重译)
+                    if not S.ann_inline_sent['report-' .. rep.id] then
+                        S.ann_want_inline['report-' .. rep.id] = {text = dfhack.df2console(rep.text)}
+                    end
                 end
             end
         end
@@ -447,6 +465,8 @@ local function handle_response(line)
                     S.displayed[rec.event_id] = true
                     if type(rec.event_id) == 'string' and rec.event_id:sub(1, 3) == 'tv-' then
                         fanyi_tv_cache_set(rec.event_id, rec.translated_text)
+                    elseif type(rec.event_id) == 'string' and rec.event_id:sub(1, 7) == 'report-' then
+                        fanyi_ann_cache_set(rec.event_id, rec.translated_text)  -- ticket-014
                     end
                     flog('done [' .. tostring(rec.event_id) .. '] '
                         .. (rec.translated_text:sub(1, 60)):gsub('%s+', ' '))
@@ -466,6 +486,8 @@ local function handle_response(line)
             S.displayed[result.event_id] = true
             if type(result.event_id) == 'string' and result.event_id:sub(1, 3) == 'tv-' then
                 fanyi_tv_cache_set(result.event_id, result.translated_text)
+            elseif type(result.event_id) == 'string' and result.event_id:sub(1, 7) == 'report-' then
+                fanyi_ann_cache_set(result.event_id, result.translated_text)  -- ticket-014
             end
             flog('done [' .. tostring(result.event_id) .. '] '
                 .. (result.translated_text:sub(1, 60)):gsub('%s+', ' '))
@@ -717,53 +739,12 @@ function fanyi_textviewer_rect(max_cols, max_rows)
     return {x = x, y = 3, w = max_cols - 2 * x, h = max_rows - 6}
 end
 
--- 贴图绘制(纯逻辑, dc 由调用方注入; 返回绘制格数): 在 textviewer 矩形内贴中文,
--- 缺字形跳格; 门控关闭/图集未装/无译文时返回 0(§2.3 静默原文)。
-function fanyi_paint_textviewer(dc, max_cols, max_rows)
-    if not S.tv_on then return 0 end
-    if not dc then return 0 end
-    if not S.tv_font.installed then
-        if S.tv_font.tried then return 0 end  -- 每会话只试一次(图集静态, 不反复 IO)
-        S.tv_font.tried = true
-        fanyi_tv_font_load()
-        if not S.tv_font.installed then return 0 end
-    end
-    local page = tv_current_page()
-    if not page then return 0 end
-    local rect = fanyi_textviewer_rect(max_cols, max_rows)
-    local rec = S.tv_cache[page.event_id]
-    if not rec then
-        -- 翻译未就绪: 登记 inline 请求(tick 统一发送), 画淡显 "..." 占位(ASCII)
-        if not S.tv_inline_sent[page.event_id] and S.sent[page.event_id] == nil
-            and not S.tv_want_inline[page.event_id] then
-            S.tv_want_inline[page.event_id] = {text = page.text, title = page.title}
-            local keys = {}
-            for k in pairs(S.tv_want_inline) do keys[#keys + 1] = k end
-            if #keys > 64 then
-                for i = 1, #keys - 32 do S.tv_want_inline[keys[i]] = nil end
-            end
-        end
-        if (S.sent[page.event_id] ~= nil or S.tv_inline_sent[page.event_id])
-            and dc.string then
-            pcall(function() dc:seek(rect.x, rect.y):string('...') end)
-        end
-        return 0
-    end
+-- 中文行贴图(ticket-013/014 共用): rows 自 rect 顶部依次绘制, 缺字形跳格;
+-- 返回绘制格数(scale=2 时每字 4 格)。dc 由调用方注入(真实 painter/无头 mock 均可)。
+local function paint_cjk_rows(dc, rows, rect)
     local scale = S.tv_font.scale or 1
     local resolve = S.tv_font.tex and S.tv_font.tex.getTexposByHandle or nil
     if not resolve then return 0 end
-    local vis_cols = math.floor(rect.w / scale)
-    local vis_rows = math.floor(rect.h / scale)
-    -- 全文 → 段 → 行(先按换行拆段, 再按宽度折行; 超行保留首屏, textviewer 自身可滚动)
-    local rows = {}
-    for seg in (rec.text .. '\n'):gmatch('([^\n]*)\n') do
-        if #seg > 0 then
-            for _, r in ipairs(fanyi_wrap_line(seg, vis_cols)) do
-                rows[#rows + 1] = r
-            end
-        end
-    end
-    while #rows > vis_rows do table.remove(rows) end
     local function tile_at(h, x, y)
         if not h then return false end
         if scale == 2 and type(h) == 'table' then
@@ -798,6 +779,54 @@ function fanyi_paint_textviewer(dc, max_cols, max_rows)
         end
     end
     return painted
+end
+
+-- 贴图绘制(纯逻辑, dc 由调用方注入; 返回绘制格数): 在 textviewer 矩形内贴中文,
+-- 缺字形跳格; 门控关闭/图集未装/无译文时返回 0(§2.3 静默原文)。
+function fanyi_paint_textviewer(dc, max_cols, max_rows)
+    if not S.tv_on then return 0 end
+    if not dc then return 0 end
+    if not S.tv_font.installed then
+        if S.tv_font.tried then return 0 end  -- 每会话只试一次(图集静态, 不反复 IO)
+        S.tv_font.tried = true
+        fanyi_tv_font_load()
+        if not S.tv_font.installed then return 0 end
+    end
+    local page = tv_current_page()
+    if not page then return 0 end
+    local rect = fanyi_textviewer_rect(max_cols, max_rows)
+    local rec = S.tv_cache[page.event_id]
+    if not rec then
+        -- 翻译未就绪: 登记 inline 请求(tick 统一发送), 画淡显 "..." 占位(ASCII)
+        if not S.tv_inline_sent[page.event_id] and S.sent[page.event_id] == nil
+            and not S.tv_want_inline[page.event_id] then
+            S.tv_want_inline[page.event_id] = {text = page.text, title = page.title}
+            local keys = {}
+            for k in pairs(S.tv_want_inline) do keys[#keys + 1] = k end
+            if #keys > 64 then
+                for i = 1, #keys - 32 do S.tv_want_inline[keys[i]] = nil end
+            end
+        end
+        if (S.sent[page.event_id] ~= nil or S.tv_inline_sent[page.event_id])
+            and dc.string then
+            pcall(function() dc:seek(rect.x, rect.y):string('...') end)
+        end
+        return 0
+    end
+    local scale = S.tv_font.scale or 1
+    local vis_cols = math.floor(rect.w / scale)
+    local vis_rows = math.floor(rect.h / scale)
+    -- 全文 → 段 → 行(先按换行拆段, 再按宽度折行; 超行保留首屏, textviewer 自身可滚动)
+    local rows = {}
+    for seg in (rec.text .. '\n'):gmatch('([^\n]*)\n') do
+        if #seg > 0 then
+            for _, r in ipairs(fanyi_wrap_line(seg, vis_cols)) do
+                rows[#rows + 1] = r
+            end
+        end
+    end
+    while #rows > vis_rows do table.remove(rows) end
+    return paint_cjk_rows(dc, rows, rect)
 end
 
 -- 待发 inline 请求冲刷(tick 内调用, 引擎在线时): 每页只请求一次,
@@ -850,8 +879,183 @@ function TextviewerInline:onRenderFrame(dc, arg2, arg3)
     return fanyi_paint_textviewer(dc, cols, rows)
 end
 
--- overlay 插件扫描脚本全局 OVERLAY_WIDGETS 注册小部件(名字: fanyi.textviewer)
-OVERLAY_WIDGETS = {textviewer = TextviewerInline}
+-- ===== ticket-014: 公告面板内嵌翻译覆盖层 =====================================
+
+-- 公告译文缓存: get/set/expire(纯逻辑, 可无头测试; 与 013 共用测试组件) ----------
+
+function fanyi_ann_cache_set(event_id, text)
+    if not event_id or not text or #text == 0 then return false end
+    S.ann_cache[event_id] = {
+        text = text,
+        ts = tonumber(now_ms()) or 0,
+    }
+    -- 有界: 超过 32 条时按时间序丢最老(面板同时只显 ≤3 条, 32 已宽裕)
+    local keys = {}
+    for k in pairs(S.ann_cache) do keys[#keys + 1] = k end
+    if #keys > 32 then
+        table.sort(keys, function(a, b)
+            return (S.ann_cache[a].ts or 0) < (S.ann_cache[b].ts or 0)
+        end)
+        for i = 1, #keys - 32 do S.ann_cache[keys[i]] = nil end
+    end
+    return true
+end
+
+function fanyi_ann_cache_get(event_id)
+    return S.ann_cache[event_id]
+end
+
+-- 过期(工单§3): ts 距 now 超过 ann_ttl_ms(默认 90s) → 移除,
+-- overlay 不再显示该条(原文自然显示, 避免翻译永远挂)。返回清除条数。
+function fanyi_ann_cache_gc(now)
+    now = tonumber(now) or tonumber(now_ms()) or 0
+    local dropped = 0
+    for k, rec in pairs(S.ann_cache) do
+        if now - (tonumber(rec.ts) or 0) > C.ann_ttl_ms then
+            S.ann_cache[k] = nil
+            dropped = dropped + 1
+        end
+    end
+    return dropped
+end
+
+-- 可见公告条目(纯逻辑): 按时间倒序(最新在前)取最多 3 条(最新占满 + 历史 2 条)。
+function fanyi_ann_visible_entries()
+    local keys = {}
+    for k in pairs(S.ann_cache) do keys[#keys + 1] = k end
+    if #keys == 0 then return {} end
+    table.sort(keys, function(a, b)
+        return (S.ann_cache[a].ts or 0) > (S.ann_cache[b].ts or 0)
+    end)
+    local entries = {}
+    for i = 1, math.min(#keys, 3) do entries[#entries + 1] = S.ann_cache[keys[i]] end
+    return entries
+end
+
+-- 公告显示行构建(纯逻辑, 工单实现要点): 最新公告占满矩形(最多 4 行),
+-- 历史公告每条只留首行(缩短, 避免新公告闪烁); 总行数 ≤ vis_rows, 截断保留最新。
+function fanyi_ann_build_rows(entries, vis_cols, vis_rows)
+    vis_cols = tonumber(vis_cols) or 20
+    vis_rows = tonumber(vis_rows) or 5
+    local rows = {}
+    for idx, e in ipairs(entries or {}) do
+        local text = (type(e) == 'table' and e.text) or ''
+        if #text > 0 then
+            local wrapped = fanyi_wrap_line(text, vis_cols)
+            local limit = (idx == 1) and 4 or 1  -- 最新最多 4 行, 历史每条 1 行
+            for i = 1, math.min(#wrapped, limit) do rows[#rows + 1] = wrapped[i] end
+            if #rows >= vis_rows then break end
+        end
+    end
+    while #rows > vis_rows do table.remove(rows) end  -- 保留顶部(最新)
+    return rows
+end
+
+-- 公告面板矩形(0 基格坐标): DFHack 公开面板 API 难定位, 优先 getPanelLayout
+-- 的 ANNOUNCEMENT 键(存在则精确), 否则已知相对位置兑底(右下角 Embark 按钮
+-- 上方, 宽~40×高~10; 工单实现要点, ticket-016 E2E 可调)。
+function fanyi_announcement_rect(max_cols, max_rows)
+    max_cols = tonumber(max_cols) or 80
+    max_rows = tonumber(max_rows) or 25
+    local ok, box = pcall(function()
+        local g = dfhack.gui or {}
+        if g.getPanelLayout then
+            local layout = g.getPanelLayout()
+            local panel = layout and (layout.ANNOUNCEMENT or layout.announcement)
+            if type(panel) == 'table' and panel.x1 and panel.y1
+                and panel.x2 and panel.y2 then
+                return {x = panel.x1, y = panel.y1,
+                        w = panel.x2 - panel.x1 + 1, h = panel.y2 - panel.y1 + 1}
+            end
+        end
+        error('announcement panel layout unavailable')
+    end)
+    if ok and type(box) == 'table' and box.w and box.h and box.w > 0 and box.h > 0 then
+        return box
+    end
+    local w = math.min(40, max_cols)
+    local h = math.min(10, max_rows)
+    return {x = math.max(0, max_cols - w), y = math.max(1, max_rows - 15), w = w, h = h}
+end
+
+-- 贴图绘制(纯逻辑, dc 由调用方注入; 返回绘制格数): 公告面板矩形内贴最新公告
+-- 中文(最新在前, 历史 2 条缩短显示); 门控关闭/图集未装/缓存空(TTL 已过)时
+-- 返回 0(§2.3 静默原文)。复用 013 字形图集(S.tv_font 同一实例)。
+function fanyi_paint_announcement(dc, max_cols, max_rows)
+    if not S.ann_on then return 0 end
+    if not dc then return 0 end
+    fanyi_ann_cache_gc()  -- 每帧先清过期(90s TTL, 工单§3)
+    if not S.tv_font.installed then
+        if S.tv_font.tried then return 0 end  -- 每会话只试一次(与 013 共用标记)
+        S.tv_font.tried = true
+        fanyi_tv_font_load()
+        if not S.tv_font.installed then return 0 end
+    end
+    local entries = fanyi_ann_visible_entries()
+    if #entries == 0 then return 0 end
+    local rect = fanyi_announcement_rect(max_cols, max_rows)
+    local scale = S.tv_font.scale or 1
+    local vis_cols = math.floor(rect.w / scale)
+    local vis_rows = math.floor(rect.h / scale)
+    local rows = fanyi_ann_build_rows(entries, vis_cols, vis_rows)
+    if #rows == 0 then return 0 end
+    return paint_cjk_rows(dc, rows, rect)
+end
+
+-- 公告 inline_translate 待发请求冲刷(工单§4: 复用 013 路由, context=
+-- 'announcement'; 公告短文本无需切句)。常规 translate 队列已覆盖的(S.sent
+-- 已登记)不再双发(预算铁律: 同文本不双发)。
+local function ann_flush_inline_requests()
+    if not S.engine_online then return end
+    local client = S.client
+    if not client then return end
+    for event_id, req in pairs(S.ann_want_inline) do
+        if not S.ann_inline_sent[event_id] and S.sent[event_id] == nil then
+            S.ann_inline_sent[event_id] = true
+            local ok = send_line(client, rpc_request('inline_translate', {
+                text = req.text, context = 'announcement',
+                title = '', event_id = event_id,
+            }))
+            if not ok then
+                S.ann_inline_sent[event_id] = nil
+                disconnect('ann inline send failed')
+                return
+            end
+        end
+    end
+    S.ann_want_inline = {}
+    local keys = {}
+    for k in pairs(S.ann_inline_sent) do keys[#keys + 1] = k end
+    if #keys > 128 then
+        for i = 1, #keys - 64 do S.ann_inline_sent[keys[i]] = nil end
+    end
+end
+
+-- overlay 小部件(官方 overlay 插件, 名字 fanyi.announcement): 仅在主游戏视图
+-- (Dwarf/Adventure Mode) 渲染; 全屏裁剪框 + 内部按公告面板矩形自定位,
+-- 不拦截鼠标(overlay 默认 click-through, 避免与 Embark 按钮冲突)。
+AnnouncementInline = defclass(AnnouncementInline, overlay.OverlayWidget)
+AnnouncementInline.ATTRS = AnnouncementInline.ATTRS or {}
+AnnouncementInline.ATTRS.desc = 'DF-FanYi 公告面板内嵌翻译(矩形内覆盖中文)'
+AnnouncementInline.ATTRS.default_pos = {x = 0, y = 0}
+AnnouncementInline.ATTRS.default_enabled = true
+AnnouncementInline.ATTRS.viewscreens = {'dwarfmode', 'adventur'}
+AnnouncementInline.ATTRS.frame = {l = 0, t = 0, r = 0, b = 0}
+
+function AnnouncementInline:onRenderFrame(dc, arg2, arg3)
+    -- 双调用形态: overlay 框架 (painter, rect表) / 无头测试 (dc, cols, rows)
+    local cols, rows = 80, 25
+    if type(arg2) == 'table' and arg2.w then
+        cols, rows = tonumber(arg2.w) or 80, tonumber(arg2.h) or 25
+    elseif type(arg2) == 'number' then
+        cols, rows = arg2, (type(arg3) == 'number' and arg3 or 25)
+    end
+    return fanyi_paint_announcement(dc, cols, rows)
+end
+
+-- overlay 插件扫描脚本全局 OVERLAY_WIDGETS 注册小部件
+-- (名字: fanyi.textviewer / fanyi.announcement)
+OVERLAY_WIDGETS = {textviewer = TextviewerInline, announcement = AnnouncementInline}
 
 local function tick()
     if S.state ~= 'running' then return end
@@ -901,7 +1105,16 @@ local function tick()
             if S.client and S.engine_online then
                 pcall(tv_flush_inline_requests)
             end
+            -- ticket-014: announcement inline_translate 待发请求(同 context)
+            if S.client and S.engine_online then
+                pcall(ann_flush_inline_requests)
+            end
         end
+    end
+
+    -- 公告缓存 TTL 过期(90s, 工单§3): 每 50 tick 扫一次
+    if S.tick % 50 == 0 then
+        pcall(fanyi_ann_cache_gc)
     end
 
     -- gamelog 回溯(低频)
@@ -963,17 +1176,21 @@ function fanyi_status_lines()
         ('  统计: 捕获=%d 发送=%d 接收=%d done=%d failed=%d 重连=%d'):format(
             S.stats.captured, S.stats.sent, S.stats.recv,
             S.stats.done, S.stats.failed, S.stats.reconnect),
-        -- ticket-012: 字幕条 widget 已删除. status 输出明确告知替代方案:
-        -- textviewer 弹窗由 textviewer_inline (ticket-013), 公告由 announcement_inline (ticket-014).
         ('  subtitle widget: removed (replaced by inline overlays) — '
             .. 'announcement_inline: ticket-014 (pending)'),
         ('  textviewer_inline (%s) — 弹窗原文区域覆盖中文 (ticket-013)'):format(
             S.tv_on and 'on' or 'off'),
+        ('  announcement_inline (%s) — 公告面板矩形覆盖中文 (ticket-014)'):format(
+            S.ann_on and 'on' or 'off'),
     }
     local n_tv = 0
     for _ in pairs(S.seen_tv_hashes) do n_tv = n_tv + 1 end
     table.insert(lines, ('  文本弹窗捕获: 已见 %d 页 (调试日志: %s)'):format(
         n_tv, tostring(S.debug_log.path)))
+    local n_ann = 0
+    for _ in pairs(S.ann_cache) do n_ann = n_ann + 1 end
+    table.insert(lines, ('  公告译文缓存: %d 条 (TTL %dms)'):format(
+        n_ann, C.ann_ttl_ms))
     if S.safe_mode then
         table.insert(lines, '  ⛔ SAFE MODE: ' .. S.safe_reason)
         table.insert(lines, '  (§44: 不做 UI 修改, 仅诊断; 等待兼容版本或更新守卫)')
@@ -1040,7 +1257,18 @@ function fanyi_command(args)
                         .. '; 弹窗显示英文原文)')
                 end
             elseif which == 'announcement' then
-                print('overlays on announcement: 等待 ticket-014 注册 announcement_inline widget')
+                S.ann_on = true
+                local ok, err = fanyi_tv_font_load()
+                pcall(function()
+                    dfhack.run_command('overlay', 'enable', 'fanyi.announcement')
+                end)
+                if ok then
+                    print('announcement_inline 已开启: 公告面板矩形内覆盖中文'
+                        .. '(TTL ' .. tostring(C.ann_ttl_ms) .. 'ms, 缺字形回退英文)')
+                else
+                    print('announcement_inline 已开启(图集未装: ' .. tostring(err)
+                        .. '; 公告面板显示英文原文)')
+                end
             else
                 print('用法: fanyi overlays on|off [textviewer|announcement]')
             end
@@ -1056,7 +1284,13 @@ function fanyi_command(args)
                 end)
                 print('textviewer_inline 已关闭(弹窗显示英文原文)')
             elseif which == 'announcement' then
-                print('overlays off announcement: 等待 ticket-014 注册 announcement_inline widget')
+                S.ann_on = false
+                S.ann_cache = {}
+                S.ann_want_inline = {}
+                pcall(function()
+                    dfhack.run_command('overlay', 'disable', 'fanyi.announcement')
+                end)
+                print('announcement_inline 已关闭(公告面板显示英文原文, 缓存已清空)')
             else
                 print('译文悬浮已关闭(游戏显示原文)')
             end
@@ -1070,6 +1304,7 @@ function fanyi_command(args)
         S.seen_tv_hashes = {}
         S.sent = {}
         S.inflight = 0
+        S.ann_cache = {}  -- ticket-014: 公告译文缓存一并清空
         S.stats.captured = 0
         print('已清空显示/去重状态')
     elseif cmd == 'debug' then

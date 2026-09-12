@@ -160,10 +160,17 @@ elseif scenario == 'overlays_cmd' then
     assert_eq(M.state().tv_on, true, 'tv_on after overlays on textviewer')
     assert_eq(#M.texture_loads, 0, 'no atlas load (tmpdir has no atlas)')
     assert_eq(M.env.OVERLAY_WIDGETS.textviewer ~= nil, true, 'textviewer widget registered')
-    -- announcement → 仍等待 ticket-014
+    -- announcement: ticket-014 已落地 → 开启并注册 widget
     M.output = {}
     M.load({'overlays', 'on', 'announcement'}, {})
-    assert_match(M.output_joined(), 'ticket', 'announcement pending notice')
+    assert_match(M.output_joined(), '已开启', 'announcement enabled notice')
+    assert_eq(M.state().ann_on, true, 'ann_on after overlays on announcement')
+    assert_eq(M.env.OVERLAY_WIDGETS.announcement ~= nil, true, 'announcement widget registered')
+    -- off: 关闭并清缓存
+    M.output = {}
+    M.load({'overlays', 'off', 'announcement'}, {})
+    assert_match(M.output_joined(), '已关闭', 'announcement disabled notice')
+    assert_eq(M.state().ann_on, false, 'ann_on after overlays off announcement')
     -- off: cjk 告知无需关闭
     M.output = {}
     M.load({'overlays', 'off', 'cjk'}, {})

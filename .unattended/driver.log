@@ -448,3 +448,8 @@ ticket-015 完成,commit `6d9de85`,407/407 全绿。
 
 剩余唯一 pending 工单 **ticket-016 (E2E 验证:游戏内自然中文显示)** 的验收需要用户重启游戏后端到端验证(`fanyi status` 输出/fanyi overlays 命令/DFHack `ls overlays`/无 `subtitle` 残留在游戏中肉眼确认),属用户交互行为,无人值守无法替代。
 [2026-09-12 09:51:54] ✅ Round completed successfully
+[2026-09-12 09:51:58] ✅ Pushed to GitHub
+[2026-09-12 09:51:58] Round complete, waiting 30s...
+[2026-09-12 09:52:28] === ROUND 2 ===
+[2026-09-12 09:52:28] Provider: pi-primary
+[2026-09-12 09:52:28] Starting AI agent...

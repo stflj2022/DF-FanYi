@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -82,6 +83,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="显式配置文件(全局位置或此处均可)",
     )
 
+    sc = sub.add_parser(
+        "shot", help="截图翻译: OCR→段落→管线(2026-09-12 Ctrl+Print 工作流)"
+    )
+    sc.add_argument("image", metavar="PATH", help="截图文件路径")
+    sc.add_argument("--json", action="store_true", help="JSON 输出(机器可读)")
+    sc.add_argument("--zh-only", action="store_true", help="仅输出中文(用于剪贴板)")
+    sc.add_argument("--save-md", action="store_true", help="在截图同目录写同名 .md 归档")
+    sc.add_argument("--config", metavar="PATH", help=argparse.SUPPRESS)
+
     b = sub.add_parser("bridge", help="启动游戏↔引擎 JSON-RPC 桥(ticket-008, 工程书 §21-22)")
     b.add_argument(
         "--config",
@@ -141,6 +151,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_bridge(args)
         if args.command == "pretranslate":
             return _cmd_pretranslate(args)
+        if args.command == "shot":
+            return _cmd_shot(args)
     except ConfigError as exc:
         print(f"配置错误: {exc}", file=sys.stderr)
         return 2
@@ -195,6 +207,54 @@ def _cmd_translate(args: argparse.Namespace) -> int:
         print(json.dumps(payload, ensure_ascii=False))
     else:
         print(result.text)
+    return 0
+
+
+def _cmd_shot(args: argparse.Namespace) -> int:
+    """截图翻译: OCR→段落→管线; 输出人读格式/JSON/仅中文。"""
+    from df_fanyi.shot import assemble_paragraphs, ocr_image, translate_paragraphs
+
+    cfg = _load_config(args)
+    paragraphs: list[str]
+    try:
+        paragraphs = assemble_paragraphs(ocr_image(args.image))
+    except (RuntimeError, subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        print(json.dumps({"error": str(exc)}, ensure_ascii=False) if args.json else f"OCR 失败: {exc}",
+              file=sys.stderr)
+        return 1
+    if not paragraphs:
+        if args.json:
+            print("[]")
+        else:
+            print("未识别到英文文本", file=sys.stderr)
+        return 1
+
+    orch = build_orchestrator(cfg)
+    results = translate_paragraphs(paragraphs, orch)
+    if args.save_md:
+        from datetime import datetime
+
+        from df_fanyi.shot import render_markdown
+
+        md_path = str(Path(args.image).with_suffix(".md"))
+        Path(md_path).write_text(
+            render_markdown(results, args.image, timestamp=datetime.now().strftime("%Y-%m-%d %H:%M")),
+            encoding="utf-8",
+        )
+        if not args.json and not args.zh_only:
+            print(f"[归档] {md_path}", file=sys.stderr)
+    if args.json:
+        print(json.dumps(results, ensure_ascii=False, indent=2))
+    elif args.zh_only:
+        for r in results:
+            print(r["zh"])
+    else:
+        for i, r in enumerate(results, 1):
+            print(f"【{i}】{r['en']}")
+            print(r["zh"])
+            if r.get("error"):
+                print(f"(错误: {r['error']})")
+            print()
     return 0
 
 

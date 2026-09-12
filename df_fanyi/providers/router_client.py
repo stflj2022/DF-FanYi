@@ -140,8 +140,17 @@ class RouterChatClient:
             raise RouterEmptyResponse(f"云端响应结构异常: {exc}") from exc
         if not content or not content.strip():
             raise RouterEmptyResponse("云端返回空译文(content 为空)")
+        # 2026-09-12 强制: 剥离 LLM 输出的思考块 (<think>/</think>)
+        # MiniMax-M3 默认开启 thinking, 输出格式 <think>reasoning</think>translation
+        # 下面代码净化 content: 只保留 think 之外的正文
+        import re as _re
+        content_clean = _re.sub(r'<think>.*?</think>\s*', '', content, flags=_re.DOTALL)
+        # 如果 LLM 遇异常只返了 think 没有 close, 也截裁
+        content_clean = _re.sub(r'<think>.*$', '', content_clean, flags=_re.DOTALL).strip()
+        if not content_clean:
+            raise RouterEmptyResponse("云端返回仅含思考块(content 为空)")
         return ChatResult(
-            content=content.strip(),
+            content=content_clean,
             reasoning=reasoning,
             model=data.get("model"),
             provider=data.get("provider"),

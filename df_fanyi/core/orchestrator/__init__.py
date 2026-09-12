@@ -104,6 +104,40 @@ def _count_english_function_words(text: str) -> int:
     return sum(1 for w in words if w in _ENGLISH_FUNCTION_WORDS)
 
 
+# 2026-09-12 中文吉卜赛检测: LLM 输出无语义中文(如 "沉默翻译这我觉得手腕")
+# 原则: 严谨只检测几乎不会出现的中文模式, 避免误杀正常译文
+# 启发: 检测“虚词连续堆叠” >= 4 个, 这是最不易误判的标志
+_CHINESE_FILLER_CHARS = frozenset({
+    '的', '了', '是', '我', '这', '那', '你', '他', '她', '它',
+    '们', '在', '有', '和', '与', '或', '而', '但', '为', '因',
+    '于', '上', '下', '中', '外', '里', '也', '都', '要', '把',
+    '会', '给', '让', '从', '向', '对', '之', '以', '被', '着',
+    '到', '去', '来', '又', '只', '还', '并', '且', '或', '但',
+    '就', '可', '能', '将', '该', '并', '且', '或', '但',
+})
+
+
+def _looks_like_chinese_gibberish(text: str, min_chars: int = 8) -> bool:
+    """检测中文吉卜赛。无意义中文 → True。
+
+    仅采用最严谨启发: 连续 5+ 虚词 (如 "的了一的是")。
+    阈值 4 误判率高("会在这里做工" 会连中), 5 才能保持准确。
+    """
+    import re as _re
+    cjk = _re.findall(r'[\u4e00-\u9fff]', text)
+    if len(cjk) < min_chars:
+        return False
+    longest_run = 0
+    current_run = 0
+    for c in cjk:
+        if c in _CHINESE_FILLER_CHARS:
+            current_run += 1
+            longest_run = max(longest_run, current_run)
+        else:
+            current_run = 0
+    return longest_run >= 5
+
+
 class Orchestrator:
     """翻译管线编排器(§11): 单句 translate, LLM 可注入, 永不抛异常。"""
 
@@ -197,8 +231,7 @@ class Orchestrator:
             )
 
         # 2026-09-12 硬性:全中文化质量门 (用户指令 "都翻译, 不要出现外文")
-        # 检测输出中残留的英文功能词(are/is/the/a/of/in/and/with 等),
-        # 超阈值(默认 2 个) → 判定翻译失败, 回退原文 + 标记 quality_english_leak
+        # 1) 英文功能词残留检测: 检输出中残留的英文功能词 (are/is/the/a/of/in/which/you 等)
         english_residue = _count_english_function_words(translated)
         if english_residue > _MAX_ENGLISH_RESIDUE:
             logger.warning(
@@ -214,6 +247,41 @@ class Orchestrator:
                 latency_ms=_ms_since(start),
                 error=f"quality_english_leak: {english_residue} function words",
             )
+
+        # 2) 中文吉卜赛检测: LLM 有时输出无意义中文(如 "沉默翻译这我觉得手腕黑下压键怎么办?")
+        #    启发: 纯中文里出现三个连续“的/了/我/是/这”但词性完全不配合, 判定为幻觉。
+        if _looks_like_chinese_gibberish(translated):
+            logger.warning(
+                "译文为中文吉卜赛, 回退原文: %s", translated[:80],
+            )
+            return TranslationResult(
+                normalized,
+                normalized,
+                model=self._model_name,
+                provider=self._provider,
+                latency_ms=_ms_since(start),
+                error="quality_chinese_gibberish",
+            )
+
+        # 3) 长度守卫: 仅拒过长, 过短允许 (LLM 可能主动省略冗余描述)
+        #    中文信息密度 ≈ 英文 1.5–2.0 倍; 上限 3.0 涵盉 LLM 失控重复
+        src_len = len(normalized)
+        tgt_len = len(translated)
+        if src_len > 0 and tgt_len > 0:
+            ratio = tgt_len / src_len
+            if ratio > 3.0:
+                logger.warning(
+                    "译文过长比异常 %.2f (src=%d tgt=%d), 回退原文: %s",
+                    ratio, src_len, tgt_len, translated[:80],
+                )
+                return TranslationResult(
+                    normalized,
+                    normalized,
+                    model=self._model_name,
+                    provider=self._provider,
+                    latency_ms=_ms_since(start),
+                    error=f"quality_length_ratio: {ratio:.2f}",
+                )
 
         # 还原占位符(§22/§23: 验证通过才还原, 还原永不丢信息)
         restored = self._protector.restore(translated.strip(), restore_map)

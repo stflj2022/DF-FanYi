@@ -479,6 +479,14 @@ _COMBINED_SYSTEM_PROMPT_ADDON = """\n\n【多段合并调用特殊指令】
   1. 严格输出 {n} 段(不多不少), 每段用同样的 `<¶¶¶PARA=N¶¶¶>` 标签包裹
   2. 段内中英混排时翻译英文部分, 与原中文拼接, 保留专有名词和变量占位符
   3. 只输出译文本体 + 标签, 不要任何说明/前缀/尾注
+  4. 【DF 领域术语·硬性】下面是“活跃术语表”, **遇到表中源词时必须使用对应译文, 不允许随意外译**:
+{terms_block}
+  5. 【DF 游戏语境·绝对禁止】本输入是 Dwarf Fortress 车辆系统说明文:
+     - "put on" = **装上**(装载到轨道/矿车上), 严禁译为“穿上”
+     - "remove from" = **从…卸下**(从轨道/矿车/库存区卸下), 严禁译为“脱下”
+     - "Tracks" = **轨道**(铁轨轨制), 严禁译为“音轨”“跟踪”
+     - "minecart" = **矿车**, "Stops" = **停靠点**, "friction" = **摩擦力**, "stockpile" = **库存区**
+     - 若句子不完整(如末尾 "the" 或 "to"), 直接按表达译出即可, 不要再发挥。
 
 示例 (2 段):
 输入:
@@ -491,8 +499,35 @@ Stops have friction.
 <¶¶¶PARA=1¶¶¶>
 轨道很便捷。
 <¶¶¶PARA=2¶¶¶>
-停站点有摩擦力。
+停靠点有摩擦力。
 """
+
+
+def _format_active_terms(text: str, *, limit: int = 30) -> str:
+    """从术语库扫出在 text 中出现的活跃术语, 格式化为术语表块。
+
+    2026-09-12 用户报 put on/remove from 被译为穿/脱(望文生意)——
+    术语注入可明确指明 “put on = 装上”“stockpile = 库存区”等。
+    """
+    try:
+        from df_fanyi.config import load_config
+        from df_fanyi.database.store import store_from_config
+        cfg = load_config()
+        store = store_from_config(cfg)
+    except Exception:
+        return "  (无——术语库不可用)"
+
+    rows = store.term_search_in_text(text, limit=limit)
+    if not rows:
+        return "  (无——本次输入中未检测到术语表中的词)"
+
+    lines = []
+    for r in rows:
+        src = (r.get("source") or "").strip()
+        dst = (r.get("target") or "").strip()
+        if src and dst:
+            lines.append(f"  - {src} → {dst}")
+    return "\n".join(lines) if lines else "  (无)"
 
 
 def _split_combined_response(text: str, n: int) -> list[str] | None:
@@ -548,7 +583,9 @@ def _translate_combined(
         load_system_prompt,
     )
     base_prompt = load_system_prompt("v1") or TRANSLATION_SYSTEM_PROMPT
-    system = base_prompt + _COMBINED_SYSTEM_PROMPT_ADDON.format(n=n)
+    # 注入 DF 活跃术语(从数据库扫输入中出现的术语子串, 让 LLM 遵守词表)
+    terms_block = _format_active_terms(combined)
+    system = base_prompt + _COMBINED_SYSTEM_PROMPT_ADDON.format(n=n, terms_block=terms_block)
 
     # 直接调云端 router, 跳过编排器缓存/词典/规则(它们只对单段有效, 合并文本不可信)
     from df_fanyi.providers.router_client import RouterChatClient, RouterError
@@ -558,11 +595,14 @@ def _translate_combined(
     try:
         # 2026-09-12 fix: 关掉 minimax-M3 的思考机制。
         # 合并调用需要 max_tokens 都给译文用, 思考占满会被路由器判空返空。
+        # 2026-09-12 补充: minimax 思考常灬 1500-3200 token; 加术语提示后,
+        # prompt 从 ~800 飙升到 ~1200 token, 需给足译文预算。
+        # 1500/2000/2500/4096 都会 finish=length 被截; 8192 才稳定。
         result = client.chat(
             combined,
             system=system,
             temperature=0.2,
-            max_tokens=min(4096, 200 * n + 400),
+            max_tokens=8192,
             enable_thinking=False,
         )
     except RouterError as exc:
@@ -597,25 +637,34 @@ def render_markdown(
 ) -> str:
     """渲染归档 md: 与截图同名同目录, 含原文/译文/模型元数据/图片引用。
 
+    2026-09-12 用户反馈: 5 段分段呈现不连贯。改为一次性拼接为连贯段落。
     图片用相对名引用, md 与 png 同目录时可直接预览。
     """
     import os
 
     name = os.path.basename(image_path)
     lines = [f"# FanYi 截图翻译 · {timestamp}", "", f"![原图]({name})", ""]
-    for i, r in enumerate(results, 1):
-        lines.append(f"## {i}. 原文")
+    # 连贯呈现: 所有段落拼成一个长段, 原文与译文并列阅读。
+    # OCR 段落之间通常本就是同一段文本(被切碎), 拼接后更接近原文语义。
+    full_en = " ".join(str(r.get("en") or "").strip() for r in results if r.get("en"))
+    full_zh = " ".join(str(r.get("zh") or "").strip() for r in results if r.get("zh"))
+    # 某段错错时 append 错误信息避免丢上下文
+    errs = [r["error"] for r in results if r.get("error")]
+    lines.append("## 原文")
+    lines.append("")
+    lines.append(full_en or "(空)")
+    lines.append("")
+    lines.append("**译文**")
+    lines.append("")
+    lines.append(full_zh or "(空)")
+    if errs:
         lines.append("")
-        lines.append(r["en"])
-        lines.append("")
-        lines.append("**译文**")
-        lines.append("")
-        lines.append(r["zh"])
-        meta = f"模型 {r.get('model') or '?'} / {r.get('provider') or '?'} · 置信 {r.get('confidence', 0):.2f}"
-        if r.get("error"):
-            meta += f" · 错误: {r['error']}"
-        lines.extend(["", f"<sub>{meta}</sub>", ""])
+        lines.append(f"⚠️ 部分段失败: {'; '.join(errs)}")
+    # 模型元数据: 采用最后一次成功的(组合调用只用一次 LLM)
+    last = next((r for r in reversed(results) if not r.get("error")), results[0] if results else {})
+    meta = f"模型 {last.get('model') or '?'} / {last.get('provider') or '?'} · 置信 {last.get('confidence', 0):.2f} · 合并 {len(results)} 段"
+    lines.extend(["", f"<sub>{meta}</sub>", ""])
     lines.append("---")
-    lines.append("<sub>DF-FanYi shot 工作流 (Ctrl+Print: slurp 选区→OCR→翻译→归档)</sub>")
+    lines.append("<sub>DF-FanYi shot 工作流 (Ctrl+Print: slurp 选区→OCR→合并翻译→归档)</sub>")
     lines.append("")
     return "\n".join(lines)

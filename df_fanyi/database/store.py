@@ -270,6 +270,36 @@ class SQLiteStore:
             ).fetchone()
             return dict(row) if row else None
 
+    def term_search_in_text(self, text: str, *, limit: int = 30) -> list[dict[str, Any]]:
+        """扫描 text 中包含哪些术语词表的源词(子串, 大小写不敏感)。
+
+        用于 2026-09-12 截图翻译多段合并调用: 把活跃术语随提示词送入 LLM,
+        避免 "put on" 被随意译为 "穿上"(DF 装载场景应为 "装上")等望文生意。
+        返回按锁定优先 + 源词长度倒序(长的优先匹配, 避免子串覆盖)。
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT * FROM terminology
+                   WHERE length(source) >= 3 AND length(target) >= 1
+                   ORDER BY locked DESC, length(source) DESC, priority ASC, id ASC"""
+            ).fetchall()
+        if not rows:
+            return []
+        text_lc = (text or "").lower()
+        hits: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for row in rows:
+            d = dict(row)
+            src_lc = (d.get("source") or "").lower()
+            if not src_lc or src_lc in seen:
+                continue
+            if src_lc in text_lc:
+                hits.append(d)
+                seen.add(src_lc)
+                if len(hits) >= limit:
+                    break
+        return hits
+
     # ---- §8.2 translation_memory(§9 L2 / §38 高频提升) ------------------------
 
     def tm_upsert(

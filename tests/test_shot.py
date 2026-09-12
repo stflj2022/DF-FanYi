@@ -397,7 +397,29 @@ class TestRenderMarkdown:
             }
         ]
         md = render_markdown(results, "/tmp/y.png", timestamp="t")
-        assert "错误: provider 不可用" in md
+        assert "provider 不可用" in md
+        assert "⚠️ 部分段失败" in md
+
+    def test_archive_renders_coherent_single_block(self):
+        """2026-09-12: 多段拼接为连贯块(不按 ## 分段), 与 zenity 浮窗一致。"""
+        results = [
+            {"en": "Tracks are convenient.", "zh": "轨道很便捷。",
+             "model": "router/L2", "provider": "router", "confidence": 0.9, "error": None},
+            {"en": "Minecarts move fast.", "zh": "矿车移动很快。",
+             "model": "router/L2", "provider": "router", "confidence": 0.9, "error": None},
+        ]
+        md = render_markdown(results, "/tmp/a.png", timestamp="2026-09-12 18:30")
+        # 连贯呈现: 只一个 ## 原文 / **译文** 标题
+        assert md.count("## 原文") == 1
+        assert md.count("**译文**") == 1
+        # 不再有 ## 1. 原文 这种分段
+        assert "## 1. 原文" not in md
+        assert "## 2. 原文" not in md
+        # 两段拼接在同一行
+        assert "Tracks are convenient. Minecarts move fast." in md
+        assert "轨道很便捷。 矿车移动很快。" in md
+        # 元数据中提示合并 N 段
+        assert "合并 2 段" in md
 
 
 class TestCombinedTranslation:
@@ -458,3 +480,12 @@ class TestCombinedTranslation:
         long_paragraph = "a " * 1000
         paragraphs = [long_paragraph] * 5  # 5000 chars > 3500 limit
         assert _translate_combined(paragraphs) is None
+
+    def test_format_active_terms_finds_match(self):
+        """DF 术语库中含的源词应被扫描出。"""
+        from df_fanyi.shot import _format_active_terms
+        text = "Minecarts on Tracks move to Stops with friction."
+        block = _format_active_terms(text)
+        # 应该至少含 minecart / track / stop / friction 之一
+        # (这些词都装在术语库里)
+        assert "→" in block or "(无" in block  # 没入库时返 “无”

@@ -220,6 +220,64 @@ elseif scenario == 'paragraph_window' then
     local payload = M.env.fanyi_render_inline_payload()
     assert_eq(#payload, 0, 'inline payload 仍为空表 (渲染在 013/014 widget)')
 
+    print('after 200 steps: trans=' .. tostring(M.state().ms.translation))
+    print('done count=' .. tostring(M.state().stats.done))
+
+elseif scenario == 'mouseselect' then
+    -- ticket-017: F11 选词 → 调 inline_translate → fetch_done 填译文 → 渲染浮窗
+    M.set_version('53.06', '53.06-r1')
+    M.engine_up = true
+    M.load({'start'}, {})
+    M.step(20)  -- 让连接建立起来, S.engine_online=true
+    assert_eq(M.state().engine_online, true, 'engine online after step')
+    local st = M.state()
+    -- 1. mouseselect 命令在 fanyi_command 中, 验证可调用且点亮 ms 状态
+    M.set_screen({
+        {' ', ' ', ' ', ' ', ' '},
+        {' ', ' ', ' ', ' ', ' '},
+        {' ', ' ', ' ', ' ', ' '},
+        {' ', ' ', ' ', ' ', ' '},
+        {' ', 'T', 'h', 'e', ' ', 'g', 'o', 'b', 'l', 'i', 'n', ' ', 's', 'm', 'e', 'l', 'l', 's', ' ', 'f', 'e', 'a', 'r', '.'},
+    })
+    M.mouse_y = 5
+    M.load({'mouseselect'}, {})
+    st = M.state()
+    assert_eq(st.ms.visible, true, 'ms.visible = true after F11')
+    assert_match(st.ms.text, 'goblin', 'ms.text 含选中行 "goblin"')
+    -- 2. 验证发出过 inline_translate
+    local sent_count = 0
+    for _, line in ipairs(M.sent_lines or {}) do
+        if line:find('inline_translate') then sent_count = sent_count + 1 end
+    end
+    assert(sent_count >= 1, '应发送 inline_translate, got ' .. tostring(sent_count))
+    -- 3. 模拟 fetch_done 回调填译文
+    M.engine_auto_respond('地精散发出恐惧的气息。', 0.95)
+    M.step(40)  -- 让 fanyi.lua 读到响应并填 ms.translation
+    st = M.state()
+    assert_eq(st.ms.translation, '地精散发出恐惧的气息。', 'ms.translation 已填入')
+    assert(#st.ms.rows > 1, 'ms.rows 多行(原文+译文+关闭提示), got ' .. tostring(#st.ms.rows))
+    -- 4. 渲染浮窗
+    local dc = {n = 0, pen = function(s, fg, bg) s._fg, s._bg = fg, bg; return s end,
+                seek = function(s, x, y) s._x, s._y = x, y; return s end,
+                string = function(s, _) s.n = s.n + 1; return s end,
+                tile = function(s, _, _) return s end}
+    local MouseSelect = M.env.MouseSelect
+    assert(MouseSelect, 'MouseSelect widget 已注册到 env')
+    local h = MouseSelect:onRenderFrame(dc, 80, 25)
+    assert(h >= 1, 'onRenderFrame 返回 > 0, got: ' .. tostring(h))
+    assert(dc.n > 0, 'dc.string 被调用 ' .. tostring(dc.n) .. ' 次')
+    -- 5. F12 关闭
+    M.load({'mousedismiss'}, {})
+    st = M.state()
+    assert_eq(st.ms.visible, false, 'F12 后 ms.visible = false')
+    -- 6. 空文本场景
+    M.set_screen({{' '}, {' '}, {' '}, {' '}, {' '}})
+    M.mouse_y = 5
+    M.load({'mouseselect'}, {})
+    st = M.state()
+    assert_eq(st.ms.visible, true, '空文本也显示提示浮窗')
+    assert_match(st.ms.rows[1], '无文本可翻译', '空文本提示正确')
+
 else
     error('unknown scenario: ' .. scenario)
 end

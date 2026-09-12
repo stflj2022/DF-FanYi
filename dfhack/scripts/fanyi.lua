@@ -102,6 +102,9 @@ S.ann_cache = S.ann_cache or {}        -- event_id('report-*') → {text, ts}(�
 if S.ann_on == nil then S.ann_on = true end  -- announcement_inline 开关(默认开; 无缓存/图集缺失时静默原文)
 S.ann_want_inline = S.ann_want_inline or {}  -- event_id → {text}(待发 inline_translate, context=announcement)
 S.ann_inline_sent = S.ann_inline_sent or {}  -- event_id → true(已请求去重)
+-- ticket-017: 屏上选词翻译(F11)状态
+S.ms = S.ms or {visible=false, text='', translation='', event_id=nil, rows={},
+                 rect=nil, started=0}         -- 浮窗驻留状态(visible=true 时渲染)
 S.debug_log = S.debug_log or {path = nil}  -- 轻量文件日志(游戏目录 fanyi-debug.log)
 S.last_vs_fingerprint = S.last_vs_fingerprint or ''  -- viewscreen 链类名指纹(变化时落盘)
 
@@ -482,6 +485,8 @@ local function handle_response(line)
                         fanyi_tv_cache_set(rec.event_id, rec.translated_text)
                     elseif type(rec.event_id) == 'string' and rec.event_id:sub(1, 7) == 'report-' then
                         fanyi_ann_cache_set(rec.event_id, rec.translated_text)  -- ticket-014
+                    elseif type(rec.event_id) == 'string' and rec.event_id:sub(1, 3) == 'ms-' then
+                        fanyi_ms_apply_translation(rec.event_id, rec.translated_text)  -- ticket-017
                     end
                     flog('done [' .. tostring(rec.event_id) .. '] '
                         .. (rec.translated_text:sub(1, 60)):gsub('%s+', ' '))
@@ -503,6 +508,8 @@ local function handle_response(line)
                 fanyi_tv_cache_set(result.event_id, result.translated_text)
             elseif type(result.event_id) == 'string' and result.event_id:sub(1, 7) == 'report-' then
                 fanyi_ann_cache_set(result.event_id, result.translated_text)  -- ticket-014
+            elseif type(result.event_id) == 'string' and result.event_id:sub(1, 3) == 'ms-' then
+                fanyi_ms_apply_translation(result.event_id, result.translated_text)  -- ticket-017
             end
             flog('done [' .. tostring(result.event_id) .. '] '
                 .. (result.translated_text:sub(1, 60)):gsub('%s+', ' '))
@@ -1089,7 +1096,191 @@ end
 
 -- overlay 插件扫描脚本全局 OVERLAY_WIDGETS 注册小部件
 -- (名字: fanyi.textviewer / fanyi.announcement)
-OVERLAY_WIDGETS = {textviewer = TextviewerInline, announcement = AnnouncementInline}
+-- ===== ticket-017: 屏上选词翻译 (MouseSelect) =====================================
+--
+-- F11 触发: 读鼠标所在行字符 → 调引擎 inline_translate → 浮窗驻留显示中文
+-- F12 关闭: 状态清空, 浮窗消失
+
+-- 屏幕字符读取(gps.screen[y][x], 1-based; 滤颜色码/控制符, 仅保留可打印 + 空格)
+local function fanyi_ms_read_row(y)
+    y = tonumber(y)
+    if not y or y < 1 then return '' end
+    local screen = df.global.gps.screen
+    if not screen or y > #screen then return '' end
+    local row = screen[y]
+    if not row then return '' end
+    local out, last_space = {}, true
+    for i = 1, #row do
+        local ch = row[i] or ' '
+        if type(ch) ~= 'string' or #ch == 0 then ch = ' ' end
+        if ch == '\0' then ch = ' ' end
+        -- 颜色码 strip: 已有 df markup strip 不适用 gps; 保留制表符为空格
+        if ch == '\t' then ch = ' ' end
+        if ch:match('[%c]') then ch = ' ' end
+        if ch == ' ' then
+            if not last_space then out[#out+1] = ' '; last_space = true end
+        else
+            out[#out+1] = ch; last_space = false
+        end
+    end
+    -- 去掉首尾空格
+    while #out > 0 and out[#out] == ' ' do out[#out] = nil end
+    return table.concat(out)
+end
+
+-- 在指定 y 坐标上下扩展找 “句子”(连续非空格行), 返回拼接文本 + 高度
+local function fanyi_ms_read_segment(y)
+    y = tonumber(y) or 1
+    local screen = df.global.gps.screen
+    if not screen then return '', 0 end
+    -- 上扩
+    local top = y
+    while top > 1 do
+        local s = fanyi_ms_read_row(top - 1)
+        if s == '' then break end
+        top = top - 1
+    end
+    -- 下扩
+    local bot = y
+    while bot < #screen do
+        local s = fanyi_ms_read_row(bot + 1)
+        if s == '' then break end
+        bot = bot + 1
+    end
+    local rows = {}
+    for yy = top, bot do rows[#rows+1] = fanyi_ms_read_row(yy) end
+    return table.concat(rows, ' '), bot - top + 1
+end
+
+-- F11 命令: 读取鼠标位置所在段, 发起 inline 翻译, 打开浮窗
+function fanyi_mouseselect_cmd()
+    if not S.engine_online then
+        -- 退路: 状态仍点亮浮窗, 让用户看到离线提示
+        S.ms = {visible=true, text='', translation='[离线] 翻译引擎未连接, 请检查 DF-FanYi 桥。',
+                event_id=nil, rows={'[离线] 翻译引擎未连接'}, rect=nil, started=dfhack.getTickCount()}
+        return
+    end
+    local mp = dfhack.gui.getMousePos and dfhack.gui.getMousePos(true) or nil
+    local mx, my = mp and mp.x or 1, mp and mp.y or 1
+    local seg, nlines = fanyi_ms_read_segment(my)
+    seg = seg or ''
+    -- trim 长度(全角较多也限 256)
+    if #seg > 256 then seg = seg:sub(1, 256) end
+    if seg == '' or #seg < 2 then
+        S.ms = {visible=true, text='', translation='[无文本可翻译]',
+                event_id=nil, rows={'[无文本可翻译]', '鼠标位置: '..my..' 行'}, rect=nil, started=dfhack.getTickCount()}
+        return
+    end
+    local event_id = 'ms-'..tostring(dfhack.getTickCount())
+    local payload = json.encode({jsonrpc='2.0', id=event_id, method='inline_translate',
+        params={text=seg, context='mouse_select', title='', event_id=event_id}})
+    local ok = S.client and send_line(S.client, payload)
+    if not ok then
+        S.ms = {visible=true, text=seg, translation='[发送失败] 翻译请求未送出, 可能是断线重连中。',
+                event_id=nil, rows={seg, '[发送失败]'}, rect=nil, started=dfhack.getTickCount()}
+        return
+    end
+    -- 记录请求, 等 fetch_done 回调填回译文
+    S.ms = {visible=true, text=seg, translation='', event_id=event_id,
+            rows={seg, '[翻译中...]'}, rect=nil, started=dfhack.getTickCount()}
+    S.ms_pending = S.ms_pending or {}
+    S.ms_pending[event_id] = seg
+end
+
+-- F12 命令: 关闭浮窗
+function fanyi_mousedismiss_cmd()
+    S.ms.visible = false
+    S.ms.text = ''
+    S.ms.translation = ''
+    S.ms.event_id = nil
+    S.ms.rows = {}
+end
+
+-- 从 fetch_done 收到的事件中检查是否属于 mouseselect, 并填充译文
+function fanyi_ms_apply_translation(event_id, translated_text)
+    if not S.ms_pending or not S.ms_pending[event_id] then return end
+    if S.ms.event_id ~= event_id then return end
+    local txt = translated_text or ''
+    if txt == '' then txt = '[译文为空]' end
+    -- 简单 wrap(中文 2 字符/格, 假设每行 40 屏宽)
+    local cols = 40
+    local out = {S.ms.text or ''}
+    -- 中文 wrap: 每个全角算 2, 半角算 1
+    local line, used = '', 0
+    for i = 1, #txt do
+        local b = txt:byte(i)
+        local is_full = b >= 0xE0 or (b >= 0x81 and b <= 0xFE) -- 简化: 含多字节都按 2 计
+        local w = is_full and 2 or 1
+        if used + w > cols then
+            out[#out+1] = line; line = ''; used = 0
+        end
+        line = line .. txt:sub(i,i); used = used + w
+    end
+    if line ~= '' then out[#out+1] = line end
+    out[#out+1] = ''
+    out[#out+1] = '[F12] 关闭'
+    S.ms.translation = txt
+    S.ms.rows = out
+    S.ms_pending[event_id] = nil
+end
+
+-- 渲染浮窗(右下角固定位置)
+local function fanyi_paint_mouseselect(dc, max_cols, max_rows)
+    if not S.ms or not S.ms.visible then return 0 end
+    if not dc then return 0 end
+    local rows = S.ms.rows or {}
+    if #rows == 0 then return 0 end
+    -- 尺寸: 宽 50, 高 #rows + 2 边框
+    local w = math.min(60, math.max(20, max_cols // 2))
+    local h = math.min(#rows + 2, max_rows - 2)
+    if h < 3 then return 0 end
+    -- 右下角对齐
+    local x = math.max(1, max_cols - w - 1)
+    local y = math.max(1, max_rows - h - 1)
+    local rect = {x = x, y = y, w = w, h = h}
+    -- 涂底(全物理格, 复用 2026-09-12 修复逻辑)
+    pcall(function() dc:pen(7, 0) end)
+    for ri = 0, rect.h - 1 do
+        local yy = rect.y + ri
+        for ci = 0, rect.w - 1 do
+            pcall(function() dc:seek(rect.x + ci, yy):tile(' ', 0) end)
+        end
+    end
+    -- 边框(简单 fg=white 占位)
+    pcall(function() dc:pen(7, 0):seek(rect.x, rect.y):string(string.rep('-', rect.w)) end)
+    pcall(function() dc:pen(7, 0):seek(rect.x, rect.y + rect.h - 1):string(string.rep('-', rect.w)) end)
+    -- 内容行
+    for i, line in ipairs(rows) do
+        local yy = rect.y + i
+        if yy >= rect.y + rect.h - 1 then break end
+        local s = line:sub(1, rect.w - 2)
+        pcall(function() dc:pen(7, 0):seek(rect.x + 1, yy):string(s) end)
+    end
+    S.ms.rect = rect
+    return rect.h
+end
+
+MouseSelect = defclass(MouseSelect, overlay.OverlayWidget)
+MouseSelect.ATTRS = MouseSelect.ATTRS or {}
+MouseSelect.ATTRS.desc = 'DF-FanYi 屏上选词翻译(F11 触发, 浮窗驻留)'
+MouseSelect.ATTRS.default_pos = {x = 0, y = 0}
+MouseSelect.ATTRS.default_enabled = true
+MouseSelect.ATTRS.viewscreens = {'dwarfmode', 'dungeonmode', 'default', 'adventur',
+    'adventur_interact', 'textviewer', 'title'}
+MouseSelect.ATTRS.frame = {l = 0, t = 0, r = 0, b = 0}
+
+function MouseSelect:onRenderFrame(dc, arg2, arg3)
+    local cols, rows = 80, 25
+    if type(arg2) == 'table' and arg2.w then
+        cols, rows = tonumber(arg2.w) or 80, tonumber(arg2.h) or 25
+    elseif type(arg2) == 'number' then
+        cols, rows = arg2, (type(arg3) == 'number' and arg3 or 25)
+    end
+    return fanyi_paint_mouseselect(dc, cols, rows)
+end
+
+OVERLAY_WIDGETS = {textviewer = TextviewerInline, announcement = AnnouncementInline,
+                    mouse_select = MouseSelect}
 
 local function tick()
     if S.state ~= 'running' then return end
@@ -1252,7 +1443,11 @@ function fanyi_command(args)
         ensure_capture()
         fanyi_install_state_hooks()
         arm_timer()
-        flog('fanyi start (捕获: 公告+游戏日志+文本弹窗)')
+        -- ticket-017: 注册 F11/F12 全局热键(选词/关闭浮窗)
+        pcall(function() dfhack.run_command('keybinding add F11@dwarfmode|dungeonmode|default|adventur|adventur_interact|textviewer "fanyi mouseselect"') end)
+        pcall(function() dfhack.run_command('keybinding add F12@dwarfmode|dungeonmode|default|adventur|adventur_interact|textviewer "fanyi mousedismiss"') end)
+        pcall(function() dfhack.run_command('overlay', 'enable', 'fanyi.mouse_select') end)
+        flog('fanyi start (捕获: 公告+游戏日志+文本弹窗; F11 选词/F12 关闭)')
         print('fanyi 捕获已启动(公告+游戏日志+文本弹窗); 引擎离线时静默显示原文')
     elseif cmd == 'stop' or cmd == 'disable' then
         if S.state ~= 'running' then print('未运行') return end
@@ -1341,6 +1536,15 @@ function fanyi_command(args)
         S.ann_cache = {}  -- ticket-014: 公告译文缓存一并清空
         S.stats.captured = 0
         print('已清空显示/去重状态')
+    elseif cmd == 'mouseselect' then
+        -- ticket-017: F11 触发, 读鼠标所在行字符 → 调 inline_translate → 浮窗驻留
+        pcall(function() fanyi_mouseselect_cmd() end)
+        arm_timer()
+    elseif cmd == 'mousedismiss' then
+        -- ticket-017: F12 关闭浮窗
+        fanyi_mousedismiss_cmd()
+        -- 脚本被 loadfile 重载后 timer 仍指向旧 chunk 的 tick, 重新 arm 用本 chunk
+        arm_timer()
     elseif cmd == 'debug' then
         print('pending=', #S.pending, 'inflight=', #S.sent,
               'readbuf=', #S.readbuf, 'retry_after=', S.retry_after)

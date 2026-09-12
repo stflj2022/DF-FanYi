@@ -230,7 +230,7 @@ function M.engine_auto_respond(done_text, confidence)
     for _, line in ipairs(M.sent_lines) do
         local req = engine_on_line(line)
         n = n + 1
-        if req.method == 'translate' then
+        if req.method == 'translate' or req.method == 'inline_translate' then
             local ev = req.params
             local result = {status='done', event_id=ev.event_id,
                             translated_text=done_text or '译文' .. tostring(ev.event_id),
@@ -341,6 +341,8 @@ env.dfhack.gui = {
             ANNOUNCEMENT = {x1 = 1, y1 = 18, x2 = 40, y2 = 24},
         }
     end,
+    -- ticket-017: 鼠标位置(默认 y=5, 指向 fixture 第 5 行)
+    getMousePos = function(_) return {x = 5, y = M.mouse_y or 5} end,
 }
 env.dfhack_flags = {}
 env.df = {
@@ -353,6 +355,54 @@ env.df = {
         end,
     },
 }
+
+-- ticket-017: 全局 GPS 屏幕字符缓冲(可由 test 在 set_screen() 里覆盖)
+M.screen_buffer = {}
+M.mouse_y = 5
+function M.set_screen(rows)
+    local s = {}
+    for y, line in ipairs(rows) do
+        s[y] = {}
+        if type(line) == 'string' then
+            for x = 1, #line do s[y][x] = line:sub(x, x) end
+        else
+            for x = 1, #line do s[y][x] = line[x] end
+        end
+    end
+    M.screen_buffer = s
+end
+env.df.global = env.df.global or {}
+setmetatable(env.df, {__newindex = function(_, k, v) rawset(_, k, v) end})
+env.df.global.gps = env.df.global.gps or {}
+setmetatable(env.df.global.gps, {__newindex = function(_, k, v) rawset(_, k, v) end})
+env.df.global.gps.screen = env.df.global.gps.screen or {}
+local _screen_mt = {
+    __len = function() return #M.screen_buffer end,
+    __index = function(_, k) return M.screen_buffer[k] end,
+}
+setmetatable(env.df.global.gps.screen, _screen_mt)
+M.set_screen({
+    {' ', ' ', ' ', ' ', ' '},
+    {' ', ' ', ' ', ' ', ' '},
+    {' ', ' ', ' ', ' ', ' '},
+    {' ', ' ', ' ', ' ', ' '},
+    {' ', 'T', 'h', 'e', ' ', 'g', 'o', 'b', 'l', 'i', 'n', ' ', 's', 'm', 'e', 'l', 'l', 's', ' '},
+    {' ', 'f', 'e', 'a', 'r', '.'},
+})
+
+-- ticket-017: 拦截 keybinding 注册(避免实际执行)
+M.keybinding_adds = {}
+env.dfhack.run_command = function(...)
+    local argv = {}
+    for i = 1, select('#', ...) do argv[i] = tostring(select(i, ...)) end
+    M.run_commands[#M.run_commands + 1] = argv
+    local joined = table.concat(argv, ' ')
+    M.last_run_cmd = joined
+    if joined:match('^keybinding add') then
+        M.keybinding_adds[#M.keybinding_adds + 1] = joined
+    end
+end
+env.dfhack.getTickCount = function() return (M.tick or 1000) end
 -- dfhack.textures mock: loadTileset 返回无限句柄表(句柄=base+i),
 -- getTexposByHandle 确定性映射 500000+handle → 测试可反推每个 cp 的 texpos。
 env.dfhack.textures = {

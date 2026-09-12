@@ -460,3 +460,8 @@ So I should output one line waiting reason and not modify anything.</think>
 
 ticket-016 已完成并推送 (commit 570defa)。所有工单 001-016 已 done，无 pending 工单可做。等待 SPEC-012 玩家手动重启游戏完成 B/C 项 E2E 验证, 或新指令/新工单输入。
 [2026-09-12 09:55:42] ✅ Round completed successfully
+[2026-09-12 09:55:46] ✅ Pushed to GitHub
+[2026-09-12 09:55:46] Round complete, waiting 30s...
+[2026-09-12 09:56:16] === ROUND 3 ===
+[2026-09-12 09:56:16] Provider: pi-primary
+[2026-09-12 09:57:00] ✅ 🎉 ALL TASKS COMPLETED AND TESTS PASS → auto-shutdown

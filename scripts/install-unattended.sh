@@ -59,7 +59,7 @@ new = '''all_done() {
     local done total
     total=$(ls "$REPO/docs/tickets"/ticket-*.md 2>/dev/null | wc -l)
     [ "$total" -eq 0 ] && return 1
-    done=$(grep -l "^## 状态: done" "$REPO/docs/tickets"/ticket-*.md 2>/dev/null | wc -l)
+    done=$(grep -l -e "^## 状态: done" -e "^> .*状态：done" "$REPO/docs/tickets"/ticket-*.md 2>/dev/null | wc -l)
     [ "$done" -ge "$total" ]
 }'''
 assert old in s, "all_done 原文未匹配,停止"

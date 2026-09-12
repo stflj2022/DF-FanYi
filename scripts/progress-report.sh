@@ -10,12 +10,12 @@ mkdir -p "$REPO/.unattended"
 # 完工后静默
 [ -f "$REPO/.unattended/STOPPED" ] && exit 0
 
-DONE=$(grep -l "^## 状态: done" "$REPO"/docs/tickets/ticket-*.md 2>/dev/null | wc -l)
+DONE=$(grep -l -e "^## 状态: done" -e "^> .*状态：done" "$REPO"/docs/tickets/ticket-*.md 2>/dev/null | wc -l)
 TOTAL=$(ls "$REPO"/docs/tickets/ticket-*.md 2>/dev/null | wc -l)
 RUNNING="否"
 tmux has-session -t dffanyi-driver 2>/dev/null && RUNNING="是"
 LAST=$(cd "$REPO" && git log -1 --format="%h %ad %s" --date=format:"%H:%M" 2>/dev/null)
-NEXT_TICKET=$(grep -L "^## 状态: done" "$REPO"/docs/tickets/ticket-*.md 2>/dev/null | head -1 | xargs -r basename 2>/dev/null)
+NEXT_TICKET=$(grep -L -e "^## 状态: done" -e "^> .*状态：done" "$REPO"/docs/tickets/ticket-*.md 2>/dev/null | head -1 | xargs -r basename 2>/dev/null)
 
 MSG="工单: $DONE/$TOTAL 完成 · driver 运行中:$RUNNING
 最近提交: $LAST"

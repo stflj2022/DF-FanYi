@@ -389,3 +389,8 @@ Error: Unknown option: -m
 
 下一可做工单：ticket-014（announcement_inline，依赖 012 ✓ / 013 不阻塞）。
 [2026-09-12 09:30:19] ✅ Round completed successfully
+[2026-09-12 09:30:24] ✅ Pushed to GitHub
+[2026-09-12 09:30:24] Round complete, waiting 30s...
+[2026-09-12 09:30:54] === ROUND 2 ===
+[2026-09-12 09:30:54] Provider: pi-primary
+[2026-09-12 09:30:54] Starting AI agent...

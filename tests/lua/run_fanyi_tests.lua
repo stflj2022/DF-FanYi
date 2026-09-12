@@ -239,7 +239,7 @@ elseif scenario == 'mouseselect' then
         {' ', ' ', ' ', ' ', ' '},
         {' ', 'T', 'h', 'e', ' ', 'g', 'o', 'b', 'l', 'i', 'n', ' ', 's', 'm', 'e', 'l', 'l', 's', ' ', 'f', 'e', 'a', 'r', '.'},
     })
-    M.mouse_y = 5
+    M.mouse_y = 4   -- 0 基屏幕坐标 → fixture 第 5 行(goblin 行)
     M.load({'mouseselect'}, {})
     st = M.state()
     assert_eq(st.ms.visible, true, 'ms.visible = true after F11')

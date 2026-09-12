@@ -341,8 +341,23 @@ env.dfhack.gui = {
             ANNOUNCEMENT = {x1 = 1, y1 = 18, x2 = 40, y2 = 24},
         }
     end,
-    -- ticket-017: 鼠标位置(默认 y=5, 指向 fixture 第 5 行)
-    getMousePos = function(_) return {x = 5, y = M.mouse_y or 5} end,
+    -- ticket-017: 鼠标位置(默认 y=4, 指向 fixture 第 5 行, 0 基屏幕坐标)
+    getMousePos = function(_) return {x = 5, y = M.mouse_y or 4} end,
+}
+-- ticket-017: dfhack.screen 屏幕坐标 API(与 dfhack.gui.getMousePos 的地图坐标区分)
+env.dfhack.screen = {
+    getMousePos = function()
+        if M.mouse_offscreen then return nil end
+        return M.mouse_x or 5, M.mouse_y or 4
+    end,
+    -- readTile(x, y, penetrate_ui): 返回 {ch=CP437 码}
+    readTile = function(x, y, penetrate)
+        local row = M.screen_buffer[y + 1]
+        if not row then return nil end
+        local ch = row[x + 1]
+        if type(ch) ~= 'string' or #ch == 0 then ch = ' ' end
+        return {ch = string.byte(ch), fg = 7, bg = 0}
+    end,
 }
 env.dfhack_flags = {}
 env.df = {
@@ -356,9 +371,11 @@ env.df = {
     },
 }
 
--- ticket-017: 全局 GPS 屏幕字符缓冲(可由 test 在 set_screen() 里覆盖)
+-- ticket-017: 屏幕文本 fixture + 屏幕尺寸(dfhack.screen.readTile 数据源)
 M.screen_buffer = {}
-M.mouse_y = 5
+M.mouse_y = 4
+M.mouse_x = 5
+M.mouse_offscreen = false
 function M.set_screen(rows)
     local s = {}
     for y, line in ipairs(rows) do
@@ -370,17 +387,17 @@ function M.set_screen(rows)
         end
     end
     M.screen_buffer = s
+    local maxw = 0
+    for _, r in ipairs(s) do if #r > maxw then maxw = #r end end
+    env.df.global.gps.dimx = maxw
+    env.df.global.gps.dimy = #s
 end
 env.df.global = env.df.global or {}
 setmetatable(env.df, {__newindex = function(_, k, v) rawset(_, k, v) end})
 env.df.global.gps = env.df.global.gps or {}
 setmetatable(env.df.global.gps, {__newindex = function(_, k, v) rawset(_, k, v) end})
-env.df.global.gps.screen = env.df.global.gps.screen or {}
-local _screen_mt = {
-    __len = function() return #M.screen_buffer end,
-    __index = function(_, k) return M.screen_buffer[k] end,
-}
-setmetatable(env.df.global.gps.screen, _screen_mt)
+env.df.global.gps.dimx = 19
+env.df.global.gps.dimy = 6
 M.set_screen({
     {' ', ' ', ' ', ' ', ' '},
     {' ', ' ', ' ', ' ', ' '},

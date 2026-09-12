@@ -1102,21 +1102,26 @@ end
 -- F12 关闭: 状态清空, 浮窗消失
 
 -- 屏幕字符读取(gps.screen[y][x], 1-based; 滤颜色码/控制符, 仅保留可打印 + 空格)
+-- 读一行屏上文本(0 基 y)。用 dfhack.screen.readTile 而非 gps.screen:
+-- DF50 gps.screen 是 3 层字节数组(ch/fg/bg/bold), Lua 侧无法按"字符表"索引;
+-- readTile(x, y, true) penetrate_ui=true 可穿透 DFHack overlay 读到游戏原生文本
+-- (否则会读到我们自己的中文 overlay, 翻译已译文本无意义)。
 local function fanyi_ms_read_row(y)
     y = tonumber(y)
-    if not y or y < 1 then return '' end
-    local screen = df.global.gps.screen
-    if not screen or y > #screen then return '' end
-    local row = screen[y]
-    if not row then return '' end
+    if not y or y < 0 then return '' end
+    local dimx = tonumber(df.global.gps.dimx) or 0
+    if dimx <= 0 then return '' end
     local out, last_space = {}, true
-    for i = 1, #row do
-        local ch = row[i] or ' '
-        if type(ch) ~= 'string' or #ch == 0 then ch = ' ' end
-        if ch == '\0' then ch = ' ' end
-        -- 颜色码 strip: 已有 df markup strip 不适用 gps; 保留制表符为空格
-        if ch == '\t' then ch = ' ' end
-        if ch:match('[%c]') then ch = ' ' end
+    for x = 0, dimx - 1 do
+        local ch = ' '
+        pcall(function()
+            local t = dfhack.screen.readTile(x, y, true)
+            local code = tonumber(t and t.ch) or 0
+            if code > 0 then
+                ch = string.char(code % 256)
+                if ch:match('%c') then ch = ' ' end
+            end
+        end)
         if ch == ' ' then
             if not last_space then out[#out+1] = ' '; last_space = true end
         else
@@ -1125,24 +1130,28 @@ local function fanyi_ms_read_row(y)
     end
     -- 去掉首尾空格
     while #out > 0 and out[#out] == ' ' do out[#out] = nil end
-    return table.concat(out)
+    local i = 1
+    while i < #out and out[i] == ' ' do i = i + 1 end
+    return table.concat(out, '', i)
 end
 
 -- 在指定 y 坐标上下扩展找 “句子”(连续非空格行), 返回拼接文本 + 高度
 local function fanyi_ms_read_segment(y)
-    y = tonumber(y) or 1
-    local screen = df.global.gps.screen
-    if not screen then return '', 0 end
+    y = tonumber(y) or 0
+    local dimy = tonumber(df.global.gps.dimy) or 0
+    if dimy <= 0 then return '', 0 end
+    if y < 0 then y = 0 end
+    if y >= dimy then y = dimy - 1 end
     -- 上扩
     local top = y
-    while top > 1 do
+    while top > 0 do
         local s = fanyi_ms_read_row(top - 1)
         if s == '' then break end
         top = top - 1
     end
     -- 下扩
     local bot = y
-    while bot < #screen do
+    while bot < dimy - 1 do
         local s = fanyi_ms_read_row(bot + 1)
         if s == '' then break end
         bot = bot + 1
@@ -1160,8 +1169,16 @@ function fanyi_mouseselect_cmd()
                 event_id=nil, rows={'[离线] 翻译引擎未连接'}, rect=nil, started=dfhack.getTickCount()}
         return
     end
-    local mp = dfhack.gui.getMousePos and dfhack.gui.getMousePos(true) or nil
-    local mx, my = mp and mp.x or 1, mp and mp.y or 1
+    -- 屏幕坐标鼠标位置: dfhack.screen.getMousePos() 返回 x,y(0 基)。
+    -- ⚠️ 不要用 dfhack.gui.getMousePos — 那是地图瓦片坐标(仅地图区有效)。
+    local mx, my = -1, -1
+    pcall(function() mx, my = dfhack.screen.getMousePos() end)
+    mx, my = tonumber(mx) or -1, tonumber(my) or -1
+    if my < 0 then
+        S.ms = {visible=true, text='', translation='[未检测到鼠标] 请把鼠标移到游戏画面内再按 F11。',
+                event_id=nil, rows={'[未检测到鼠标]'}, rect=nil, started=dfhack.getTickCount()}
+        return
+    end
     local seg, nlines = fanyi_ms_read_segment(my)
     seg = seg or ''
     -- trim 长度(全角较多也限 256)

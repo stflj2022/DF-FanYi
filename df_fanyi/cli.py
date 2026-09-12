@@ -243,7 +243,9 @@ def _cmd_shot(args: argparse.Namespace) -> int:
     orch_factory = lambda: build_orchestrator(cfg)
     try:
         from df_fanyi.providers.router_client import RouterChatClient
-        combined_client = RouterChatClient()
+        # 2026-09-12 19:14: zhipu/glm-5.3 接管合并大请求时非流式生成 >60s,
+        # 默认 60s 超时会误判失败回退并行(丢术语注入)。抬到 180s。
+        combined_client = RouterChatClient(timeout=180.0)
     except Exception:
         combined_client = None
     results = _translate_combined(paragraphs, client=combined_client)

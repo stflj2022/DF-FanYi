@@ -487,6 +487,9 @@ _COMBINED_SYSTEM_PROMPT_ADDON = """\n\n【多段合并调用特殊指令】
      - "Tracks" = **轨道**(铁轨轨制), 严禁译为“音轨”“跟踪”
      - "minecart" = **矿车**, "Stops" = **停靠点**, "friction" = **摩擦力**, "stockpile" = **库存区**
      - 若句子不完整(如末尾 "the" 或 "to"), 直接按表达译出即可, 不要再发挥。
+  6. 【OCR 残留清理】输入可能混入游戏标记剥壳后的无意义碎片(如 =1t、F&、ITA):
+     译文中**不得保留**这类碎片——按语境还原为所指对象或直接省略,
+     保证输出是通顺自然的中文(2026-09-12 用户反馈译文里残留 =1t/F&/ITA)。
 
 示例 (2 段):
 输入:
@@ -591,7 +594,10 @@ def _translate_combined(
     from df_fanyi.providers.router_client import RouterChatClient, RouterError
 
     if client is None:
-        client = RouterChatClient()
+        # 2026-09-12 19:14 实测: minimax 软降级后 zhipu/glm-5.3 优先, 5 段合并
+        # 大 prompt 非流式生成 >60s → 默认 60s 超时误判失败回退并行(丢术语注入)。
+        # 合并调用单独抬到 180s。
+        client = RouterChatClient(timeout=180.0)
     try:
         # 2026-09-12 fix: 关掉 minimax-M3 的思考机制。
         # 合并调用需要 max_tokens 都给译文用, 思考占满会被路由器判空返空。

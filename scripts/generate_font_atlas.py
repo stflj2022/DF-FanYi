@@ -12,6 +12,11 @@ fanyi.lua 经 dfhack.textures.loadTileset 注册后逐字贴图 —— classic 5
         --charset ascii+cjk-punct+gb2312-1 \
         --tile 8x12 --page 64x64 --out dfhack/data/fanyi-font
 
+    # ticket-013: textviewer 内嵌覆盖层用小子集大字图集(scale=2, 每字 16x24px):
+    python3 scripts/generate_font_atlas.py \
+        --font /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc --face SC \
+        --subset 800 --scale 2 --out dfhack/data/textviewer-font
+
 产物:
 - page-NNN.png   RGBA 图集, 每格 tile_w x tile_h 像素, 白字+黑影(任意底色可读);
 - index.json     {tile_w, tile_h, pages:[{png, cols, rows, count, cps:[...]}]},
@@ -21,8 +26,10 @@ fanyi.lua 经 dfhack.textures.loadTileset 注册后逐字贴图 —— classic 5
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import sys
+from collections import Counter
 from pathlib import Path
 
 # ---- 字符集 ----------------------------------------------------------------
@@ -41,6 +48,53 @@ def _gb2312_level1() -> str:
 
 
 CJK_PUNCT = "，。、；：？！…—·「」『』（）《》【】“”‘’％×÷"
+
+
+def _is_han(cp: int) -> bool:
+    return 0x4E00 <= cp <= 0x9FFF  # CJK 统一表意文字(基本区)
+
+
+def top_cjk_from_corpus(n: int, corpus_dir: Path) -> str:
+    """已提交译文语料 → top-N 高频汉字(确定性: -频次, 码点升序)。
+
+    语料源(corpus_dir 下):
+    - *.jsonl          : {"key":..., "zh"|"translation": 中文} 逐行 JSON;
+    - legacy-dictionary.csv : text,translation 两列 CSV。
+    ticket-013: 800 字覆盖 ~95% textviewer 文本, 不常用的字 fall back 英文(不补字)。
+    """
+    counter: Counter[str] = Counter()
+    for path in sorted(corpus_dir.glob("*.jsonl")):
+        with path.open(encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    obj = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                zh = obj.get("zh") or obj.get("translation") or ""
+                if not isinstance(zh, str):
+                    continue
+                counter.update(ch for ch in zh if _is_han(ord(ch)))
+    csv_path = corpus_dir / "legacy-dictionary.csv"
+    if csv_path.exists():
+        with csv_path.open(encoding="utf-8", newline="") as fh:
+            for row in csv.reader(fh):
+                if len(row) >= 2:
+                    counter.update(ch for ch in row[1] if _is_han(ord(ch)))
+    top = sorted(counter.items(), key=lambda kv: (-kv[1], ord(kv[0])))[:n]
+    return "".join(ch for ch, _ in top)
+
+
+def build_subset_charset(n: int, corpus_dir: Path) -> list[int]:
+    """ascii + cjk-punct + 语料 top-N 高频汉字 → 去重有序 codepoint 表。"""
+    if n <= 0:
+        raise SystemExit("--subset 必须 > 0")
+    if not corpus_dir.is_dir():
+        raise SystemExit(f"语料目录不存在: {corpus_dir}")
+    seen: dict[int, None] = {cp: None for cp in build_charset("ascii+cjk-punct")}
+    for ch in top_cjk_from_corpus(n, corpus_dir):
+        seen.setdefault(ord(ch), None)
+    return list(seen)
+
 
 CHARSET_PARTS = {
     "ascii": "".join(chr(c) for c in range(0x20, 0x7F)),
@@ -187,7 +241,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--font", required=True, help="TTF/TTC 字体路径")
     parser.add_argument("--face", default="0", help="TTC 子字体下标或名(SC/JP/...), 默认 0")
     parser.add_argument("--charset", default="ascii+cjk-punct+gb2312-1",
-                        help="ascii/cjk-punct/gb2312-1 以 + 组合")
+                        help="ascii/cjk-punct/gb2312-1 以 + 组合(--subset 时忽略)")
+    parser.add_argument("--subset", type=int, default=0,
+                        help=">0: 改用语料 top-N 高频汉字子集(--corpus), ticket-013")
+    parser.add_argument("--corpus", default="dfint-data",
+                        help="--subset 的语料目录(jsonl + legacy-dictionary.csv)")
     parser.add_argument("--tile", default="8x12", help="tile 尺寸(默认 8x12, classic 网格)")
     parser.add_argument("--page", default="64x64", help="每页格数(默认 64x64=4096 格)")
     parser.add_argument("--scale", type=int, default=1, choices=(1, 2),
@@ -209,7 +267,10 @@ def main(argv: list[str] | None = None) -> int:
     cols, rows = int(pg_s), int(pr_s)
     if cols % (2 * args.scale) != 0:
         raise SystemExit(f"--page 列数 {cols} 必须被 {2 * args.scale} 整除(防字形跨页行)")
-    cps = build_charset(args.charset)
+    if args.subset > 0:
+        cps = build_subset_charset(args.subset, Path(args.corpus))
+    else:
+        cps = build_charset(args.charset)
     pages = plan_pages(cps, cols=cols, rows=rows, scale=args.scale)
     emit(args.font, args.face, pages, out=Path(args.out), tile_w=tile_w, tile_h=tile_h,
          scale=args.scale, shrink=args.shrink)

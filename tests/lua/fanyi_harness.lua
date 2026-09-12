@@ -197,6 +197,18 @@ function M.add_report(id, text)
     M.reports[id] = {text = text}
 end
 
+-- 设置当前 viewscreen 为 textviewer 弹窗(ticket-013 捕获/渲染无头测试用)
+function M.set_textviewer(title, lines)
+    local tv = {
+        __is_textviewer = true,
+        title = title,
+        text = lines or {},
+        parent = nil,
+    }
+    setmetatable(tv, {__tostring = function() return '<viewscreen_textviewerst:0xmock>' end})
+    M.cur_viewscreen = tv
+end
+
 function M.emit_report(id)
     M.eventful.onReport.fanyi(id)
 end
@@ -319,10 +331,19 @@ env.dfhack = {
     -- onStateChange hook 表(fanyi.lua fanyi_install_state_hooks 需要)
     onStateChange = {},
 }
+-- ticket-013: textviewer 弹窗 mock(getCurViewscreen + viewscreen 判型由 env.df 提供)
+env.dfhack.gui = {
+    getCurViewscreen = function() return M.cur_viewscreen end,
+}
 env.dfhack_flags = {}
 env.df = {
     report = {
         find = function(id) return M.reports[id] end,
+    },
+    viewscreen_textviewerst = {
+        is_instance = function(_, obj)
+            return type(obj) == 'table' and obj.__is_textviewer == true
+        end,
     },
 }
 -- dfhack.textures mock: loadTileset 返回无限句柄表(句柄=base+i),
@@ -350,11 +371,13 @@ env.overlay = overlay_mod  -- 便于测试直接取 OverlayWidget 基类
 
 -- ---------- 测试辅助: 字形图集安装 / mock painter ----------
 
--- 在 tmpdir/hack/data/fanyi-font/ 写假图集(真实 PNG 二进制不重要 — textures 已 mock)
-function M.install_font(pages, tile_w, tile_h)
+-- 在 tmpdir/hack/data/<subdir>/ 写假图集(真实 PNG 二进制不重要 — textures 已 mock)
+function M.install_font(pages, tile_w, tile_h, subdir, scale)
+    subdir = subdir or 'fanyi-font'
+    scale = scale or 1
     tile_w = tile_w or 8
     tile_h = tile_h or 12
-    local dir = M.tmpdir .. '/hack/data/fanyi-font/'
+    local dir = M.tmpdir .. '/hack/data/' .. subdir .. '/'
     os.execute('mkdir -p "' .. dir .. '"')
     for name, cps in pairs(pages) do
         local f = assert(io.open(dir .. name, 'wb'))
@@ -368,7 +391,8 @@ function M.install_font(pages, tile_w, tile_h)
     end
     table.sort(page_list, function(a, b) return a.png < b.png end)
     local f = assert(io.open(dir .. 'index.json', 'w'))
-    f:write(json.encode({version = 1, tile_w = tile_w, tile_h = tile_h, pages = page_list}))
+    f:write(json.encode({version = 1, tile_w = tile_w, tile_h = tile_h,
+                         scale = scale, pages = page_list}))
     f:close()
     return dir
 end

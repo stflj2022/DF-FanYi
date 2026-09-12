@@ -14,8 +14,8 @@ if [[ "$MODE" == "-d" || "$MODE" == "--df-root" ]]; then MODE="install"; fi
 
 SRC="$ROOT/dfhack/scripts/fanyi.lua"
 DEST="$DF_ROOT/hack/scripts/fanyi.lua"
-FONT_SRC="$ROOT/dfhack/data/fanyi-font"
-FONT_DEST="$DF_ROOT/hack/data/fanyi-font"
+FONT_SRC="$ROOT/dfhack/data/textviewer-font"
+FONT_DEST="$DF_ROOT/hack/data/textviewer-font"
 
 if [[ ! -f "$SRC" ]]; then
     echo "✗ 仓库脚本缺失: $SRC" >&2

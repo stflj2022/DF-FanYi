@@ -8,6 +8,9 @@ docs/audits/DFHACK_INTEGRATION.md)还是 unix socket, 帧格式一致:
 - translate(params=TextEvent)  → 调度器 submit; 同步快路径立即 status=done,
   异步路径 status=queued(§29: 游戏主线程绝不等待 LLM), 后续由 fetch_done 取回;
 - fetch_done()                → 排空自上次轮询以来完成的译文(全同缓存队列);
+- inline_translate(text,      → ticket-013: 段落级缓存路由(键 inline:{context}:{title}:
+  context, title, event_id)     {text_hash}); 命中即回(cached=true), 未命中提交调度器
+                                (同步 done / 异步 queued, 完成后回填缓存);
 - health()                    → 引擎存活/版本/队列统计(重连探测用);
 - version()                   → 协议版本信息。
 

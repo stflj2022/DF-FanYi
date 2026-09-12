@@ -14,13 +14,14 @@
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import select
 import socket
 import threading
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from typing import Any
 
 from df_fanyi.bridge.protocol import (
@@ -33,10 +34,16 @@ from df_fanyi.bridge.protocol import (
     normalize_event,
     priority_from_event,
 )
+from df_fanyi.core.parser import normalize_text
 
 logger = logging.getLogger("df_fanyi.bridge.server")
 
-_METHODS = ("translate", "fetch_done", "health", "version")
+_METHODS = ("translate", "fetch_done", "inline_translate", "health", "version")
+
+# inline_translate(ticket-013): textviewer 内嵌覆盖层的段落级缓存上限与文本上限。
+# SQLite 持久化段落缓存属 ticket-015, 本层只做进程内有界 LRU。
+_INLINE_CACHE_CAPACITY = 256
+_INLINE_MAX_TEXT = 20_000
 
 
 class _ResultsBuffer:
@@ -105,6 +112,9 @@ class BridgeServer:
         self._results = _ResultsBuffer(results_capacity, results_ttl_s)
         self._lock = threading.Lock()
         self._pending: dict[str, deque[str]] = {}  # source_text → [event_id] FIFO(完成映射)
+        # ticket-013 inline_translate: 段落缓存(cache_key → 译记录) + 在途登记
+        self._inline_cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self._inline_wait: dict[str, str] = {}  # source_text → cache_key(异步完成后回填)
         self._stats = {"translated": 0, "completed": 0, "failed": 0}
         self._running = False
         self._started_at = 0.0
@@ -272,6 +282,8 @@ class BridgeServer:
             return self._on_translate(params)
         if method == "fetch_done":
             return self._on_fetch_done(params)
+        if method == "inline_translate":
+            return self._on_inline_translate(params)
         if method == "health":
             return self._on_health(params)
         if method == "version":
@@ -327,6 +339,99 @@ class BridgeServer:
     def _on_fetch_done(self, params: dict[str, Any]) -> dict[str, Any]:
         return {"translations": self._results.drain()}
 
+    # ---- inline_translate(ticket-013): textviewer 内嵌覆盖层段落路由 ----------
+
+    @staticmethod
+    def _inline_key(text: str, context: str, title: str) -> str:
+        digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
+        return f"inline:{context}:{title}:{digest}"
+
+    def _inline_cache_get(self, key: str) -> dict[str, Any] | None:
+        with self._lock:
+            rec = self._inline_cache.get(key)
+            if rec is not None:
+                self._inline_cache.move_to_end(key)
+            return rec
+
+    def _inline_cache_put(self, key: str, record: dict[str, Any]) -> None:
+        with self._lock:
+            self._inline_cache[key] = record
+            self._inline_cache.move_to_end(key)
+            while len(self._inline_cache) > _INLINE_CACHE_CAPACITY:
+                self._inline_cache.popitem(last=False)
+
+    def _on_inline_translate(self, params: dict[str, Any]) -> dict[str, Any]:
+        """段落级缓存路由: 命中即回; 未命中提交调度器(同步快路径即回/异步 queued)。
+
+        游戏侧重开同一 textviewer 页时命中缓存秒回, 不再触发 LLM(预算铁律)。
+        异步完成由 _on_done 回填 _inline_wait 登记的 cache_key, 下次命中。
+        """
+        text = params.get("text")
+        if not isinstance(text, str) or not text.strip():
+            raise RPCError(-32602, "params.text 必须为非空字符串")
+        if len(text) > _INLINE_MAX_TEXT:
+            raise RPCError(-32602, f"params.text 过长(>{_INLINE_MAX_TEXT} 字符)")
+        context = str(params.get("context") or "")
+        title = str(params.get("title") or "")
+        event_id = str(params.get("event_id") or "")
+        key = self._inline_key(text, context, title)
+
+        cached = self._inline_cache_get(key)
+        if cached is not None:
+            self._stats["translated"] += 1
+            return {
+                "status": "done",
+                "cached": True,
+                "event_id": event_id,
+                "source_text": text,
+                "translated_text": cached["translated_text"],
+                "confidence": cached["confidence"],
+                "model": cached["model"],
+                "provider": cached["provider"],
+                "error": "",
+            }
+
+        submission = self.scheduler.submit(
+            text,
+            priority=priority_from_event(85),  # 用户正在读的弹窗, 高于公告(80)
+            context={"screen": context or "textviewer", "context_id": f"inline:{title}",
+                     "text_type": "TEXTVIEWER", "game_version": ""},
+        )
+        if submission.is_async:
+            with self._lock:
+                # 调度器内部会归一化文本(job.source_text), 按归一化形登记回填键
+                self._inline_wait[normalize_text(text)] = key
+            self._stats["translated"] += 1
+            return {
+                "status": "queued",
+                "cached": False,
+                "event_id": event_id,
+                "source_text": text,
+                "translated_text": text,
+                "confidence": 0.0,
+                "model": "",
+                "provider": "",
+            }
+        result = submission.result
+        record = {
+            "translated_text": result.text,
+            "confidence": result.confidence,
+            "model": result.model,
+            "provider": result.provider,
+        }
+        self._inline_cache_put(key, record)
+        return {
+            "status": "done",
+            "cached": False,
+            "event_id": event_id,
+            "source_text": text,
+            "translated_text": result.text,
+            "confidence": result.confidence,
+            "model": result.model,
+            "provider": result.provider,
+            "error": result.error,
+        }
+
     def _on_health(self, params: dict[str, Any]) -> dict[str, Any]:
         return {
             "engine": "ok",
@@ -358,6 +463,15 @@ class BridgeServer:
 
     def _on_done(self, job, result) -> None:
         self._stats["completed"] += 1
+        with self._lock:
+            inline_key = self._inline_wait.pop(job.source_text, None)
+        if inline_key is not None:  # ticket-013: inline 异步完成 → 回填段落缓存
+            self._inline_cache_put(inline_key, {
+                "translated_text": result.text,
+                "confidence": result.confidence,
+                "model": result.model,
+                "provider": result.provider,
+            })
         self._results.put(
             {
                 "event_id": self._pop_event_id(job.source_text),
@@ -373,6 +487,8 @@ class BridgeServer:
 
     def _on_failed(self, job) -> None:
         self._stats["failed"] += 1
+        with self._lock:
+            self._inline_wait.pop(job.source_text, None)  # 失败不缓存, 下次重试
         self._results.put(
             {
                 "event_id": self._pop_event_id(job.source_text),

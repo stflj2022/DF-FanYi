@@ -8,16 +8,18 @@
 --   1. 捕获: 公告(report, eventful.onReport)+ 游戏日志回溯(History, 新行去重);
 --   2. 传输: JSON-RPC 2.0 over JSON Lines, loopback TCP
 --      (DFHack 自捆绑 luasocket 官方仅 TCP, 见 docs/audits/DFHACK_INTEGRATION.md §5);
---   3. 渲染: overlay 小部件(底部字幕条); 中文经字形图集(hack/data/fanyi-font/)
---      + dfhack.textures 官方 API 逐字贴图(ticket-009, 定论见
---      docs/audits/DFHACK_INTEGRATION.md §9); 图集未安装/门控关闭时不绘制
---      → 游戏显示原文(§2.3 静默降级);
+--   3. 渲染: textviewer 弹窗内嵌覆盖层(ticket-013, 原文区域直接贴中文,
+--      观感像官方中文版; 字幕条已于 ticket-012 删除); 中文经字形图集
+--      (hack/data/textviewer-font/, subset 800, scale=2)+ dfhack.textures 官方 API
+--      逐字贴图(定论见 docs/audits/DFHACK_INTEGRATION.md §9); 图集未安装/门控
+--      关闭时不绘制 → 游戏显示原文(§2.3 静默降级);
 --   4. 版本守卫: DF/DFHack 版本不匹配 → Safe Mode(不捕获/不渲染, 仅诊断 §43-44);
 --   5. 断线自愈: 引擎未启动/宕机 → 指数退避重连, 任何时刻不阻塞游戏主循环
 --      (所有套接字操作非阻塞 + pcall, §29/§30)。
 --
--- 命令: fanyi status|start|stop|clear|debug|overlays on|off [cjk]
---   overlays on cjk: 字体贴图已安装后显式开启 CJK 绘制(ticket-009 落地后)。
+-- 命令: fanyi status|start|stop|clear|debug|overlays on|off [textviewer|announcement]
+--   overlays on textviewer: 开启弹窗内嵌中文覆盖层(ticket-013, 需图集
+--   hack/data/textviewer-font/, 缺图集时静默显示原文)。
 --
 -- 非标准注: 状态暴露为全局 fanyi_state(诊断/测试用), 渲染载荷由纯函数
 -- fanyi_render_lines() 产出(与 overlay 解耦, 可无头测试)。
@@ -81,6 +83,13 @@ S.readbuf = S.readbuf or ''       -- 行拆解缓冲(响应聚合)
 S.last_error = S.last_error or ''
 S.gamelog = S.gamelog or {enabled=true, path=nil}
 S.seen_tv_hashes = S.seen_tv_hashes or {}  -- textviewer 弹窗内容去重(哈希)
+-- ticket-013: textviewer 内嵌翻译覆盖层状态
+S.tv_cache = S.tv_cache or {}        -- event_id → {text, ts, title}(译文缓存)
+S.tv_meta = S.tv_meta or {}          -- event_id → title(捕获时记录)
+if S.tv_on == nil then S.tv_on = true end  -- textviewer_inline 开关(默认开; 图集/引擎未就绪不绘制)
+S.tv_font = S.tv_font or {installed = false}  -- 字形图集(hack/data/textviewer-font/)
+S.tv_want_inline = S.tv_want_inline or {}     -- event_id → {text, title}(待发 inline 请求)
+S.tv_inline_sent = S.tv_inline_sent or {}     -- event_id → true(inline_translate 已请求去重)
 S.debug_log = S.debug_log or {path = nil}  -- 轻量文件日志(游戏目录 fanyi-debug.log)
 S.last_vs_fingerprint = S.last_vs_fingerprint or ''  -- viewscreen 链类名指纹(变化时落盘)
 
@@ -247,6 +256,7 @@ local function capture_textviewer()
     local fp = table.concat(names, '<')
     if fp ~= S.last_vs_fingerprint then
         S.last_vs_fingerprint = fp
+        fanyi_tv_cache_gc(fp)  -- ticket-013: 离开 textviewer → 清空弹窗译文缓存
         flog('viewscreen链: ' .. fp)
     end
     cur = vs
@@ -256,15 +266,15 @@ local function capture_textviewer()
                and df.viewscreen_textviewerst:is_instance(cur)
         end)
         if okc and is_tv then
-            local ok_b, full = pcall(function()
+            local ok_b, full, title = pcall(function()
+                local t = tostring(cur.title or '')
                 local parts = {}
-                local title = tostring(cur.title or '')
-                if #title > 0 then parts[#parts + 1] = title end
+                if #t > 0 then parts[#parts + 1] = t end
                 for i = 0, #cur.text - 1 do
                     local ln = tostring(cur.text[i] or '')
                     if #ln > 0 then parts[#parts + 1] = ln end
                 end
-                return table.concat(parts, '\n')
+                return table.concat(parts, '\n'), t
             end)
             if ok_b and full and #full >= 10 then
                 local h = fnv1a(full)
@@ -276,6 +286,7 @@ local function capture_textviewer()
                     if #keys > 512 then
                         for j = 1, #keys - 256 do S.seen_tv_hashes[keys[j]] = nil end
                     end
+                    S.tv_meta['tv-' .. h] = title or ''  -- ticket-013: 译文缓存元数据
                     flog(('捕获textviewer: %d字符 hash=%s'):format(#full, h:sub(1, 10)))
                     push_event({
                         event_id = 'tv-' .. h,       -- 稳定 id: 引擎侧天然幂等
@@ -434,6 +445,9 @@ local function handle_response(line)
                     and rec.confidence > 0 and rec.translated_text
                     and rec.translated_text ~= '' then
                     S.displayed[rec.event_id] = true
+                    if type(rec.event_id) == 'string' and rec.event_id:sub(1, 3) == 'tv-' then
+                        fanyi_tv_cache_set(rec.event_id, rec.translated_text)
+                    end
                     flog('done [' .. tostring(rec.event_id) .. '] '
                         .. (rec.translated_text:sub(1, 60)):gsub('%s+', ' '))
                 end
@@ -450,6 +464,9 @@ local function handle_response(line)
             and result.confidence and result.confidence > 0
             and result.translated_text and result.translated_text ~= '' then
             S.displayed[result.event_id] = true
+            if type(result.event_id) == 'string' and result.event_id:sub(1, 3) == 'tv-' then
+                fanyi_tv_cache_set(result.event_id, result.translated_text)
+            end
             flog('done [' .. tostring(result.event_id) .. '] '
                 .. (result.translated_text:sub(1, 60)):gsub('%s+', ' '))
         end
@@ -477,6 +494,364 @@ local function rpc_request(method, params)
     local encoded = JSON.encode(req)
     return (encoded:gsub('\n[ \t]*', ''))
 end
+
+-- ===== ticket-013: textviewer 弹窗内嵌翻译覆盖层 ==============================
+
+-- UTF-8 → codepoint 表(自实现, 不依赖 DFHack Lua 编译选项; 非法序列→U+FFFD)
+function fanyi_utf8_codepoints(s)
+    local out = {}
+    local i, n = 1, #s
+    while i <= n do
+        local b1 = s:byte(i)
+        local cp, extra
+        if b1 < 0x80 then cp, extra = b1, 0
+        elseif b1 >= 0xC2 and b1 < 0xE0 then cp, extra = b1 - 0xC0, 1
+        elseif b1 >= 0xE0 and b1 < 0xF0 then cp, extra = b1 - 0xE0, 2
+        elseif b1 >= 0xF0 and b1 < 0xF5 then cp, extra = b1 - 0xF0, 3
+        else cp, extra = 0xFFFD, 0 end
+        local ok = true
+        for k = 1, extra do
+            local b = s:byte(i + k)
+            if b and b >= 0x80 and b < 0xC0 then
+                cp = cp * 0x40 + (b - 0x80)
+            else
+                ok = false
+                break
+            end
+        end
+        if not ok then cp = 0xFFFD end
+        out[#out + 1] = cp
+        i = i + (ok and (extra + 1) or 1)
+    end
+    return out
+end
+
+-- 剥离 DF 颜色/格式标记([C:R:G:B]/[B]/[VAR:..]/[P:..]), 保留字面方括号文本
+-- (如 "[需要燃料]")。弹窗原文可能携带标记, 贴图前剥离避免乱字(2026-09-11 同款防线)。
+local DF_MARKUP_RE = '%[C:%d+:%d+:%d+%]'
+local function fanyi_strip_df_markup(text)
+    if not text or #text == 0 then return text end
+    local t = text:gsub(DF_MARKUP_RE, '')
+    t = t:gsub('%[B%]', '')
+    t = t:gsub('%[VAR:[^%[%]]*%]', '')
+    t = t:gsub('%[P:%d+:[^%[%]]*%]', '')
+    return t
+end
+
+-- UTF-8 感知换行: 一段文本按字符数拆成 ≤max_cols 的行(优先在空格处断行)
+function fanyi_wrap_line(text, max_cols)
+    text = fanyi_strip_df_markup(text)
+    local cps = fanyi_utf8_codepoints(text)
+    if #cps <= max_cols then return {text} end
+    local rows = {}
+    local start_i = 1
+    while start_i <= #cps do
+        local end_i = math.min(start_i + max_cols - 1, #cps)
+        if end_i < #cps then
+            local space_i = end_i
+            while space_i > start_i + math.floor(max_cols * 0.3) and cps[space_i] ~= 32 do
+                space_i = space_i - 1
+            end
+            if cps[space_i] == 32 then end_i = space_i end
+        end
+        local seg = {}
+        for i = start_i, end_i do seg[#seg + 1] = utf8.char(cps[i]) end
+        rows[#rows + 1] = table.concat(seg)
+        start_i = end_i + 1
+    end
+    return rows
+end
+
+-- 哈希表显式计数(`#` 对非数组未定义 —— ticket-008 已踩坑, 严禁回归)
+function fanyi_count_map(t)
+    local n = 0
+    for _ in pairs(t) do n = n + 1 end
+    return n
+end
+
+-- 弹窗译文缓存: get/set/expire(纯逻辑, 可无头测试) --------------------------------
+
+function fanyi_tv_cache_set(event_id, text, title)
+    if not event_id or not text or #text == 0 then return false end
+    S.tv_cache[event_id] = {
+        text = text,
+        ts = now_ms(),
+        title = title or S.tv_meta[event_id] or '',
+    }
+    -- 有界: 超过 32 条时按时间序丢最老(欢迎向导页数有限, 不需更大)
+    local keys = {}
+    for k in pairs(S.tv_cache) do keys[#keys + 1] = k end
+    if #keys > 32 then
+        table.sort(keys, function(a, b)
+            return (S.tv_cache[a].ts or 0) < (S.tv_cache[b].ts or 0)
+        end)
+        for i = 1, #keys - 32 do S.tv_cache[keys[i]] = nil end
+    end
+    return true
+end
+
+function fanyi_tv_cache_get(event_id)
+    return S.tv_cache[event_id]
+end
+
+-- 过期: 离开 textviewer(viewscreen 链指纹不含 textviewer) → 清空全部弹窗缓存;
+-- 引擎侧 inline_translate 段落缓存仍在, 重进同页时秒回不重译。
+function fanyi_tv_cache_gc(screen_fingerprint)
+    if not screen_fingerprint or not screen_fingerprint:find('textviewer', 1, true) then
+        local n = fanyi_count_map(S.tv_cache)
+        S.tv_cache = {}
+        return n
+    end
+    return 0
+end
+
+-- 装载 textviewer 字形图集(hack/data/textviewer-font/, subset 800, scale=2)。
+-- 与 ticket-009 同款管线: 存 handle, 贴图时实时 getTexposByHandle 解析
+-- (世界加载 reset_texpos 后 dynamic 纹理自动重注册, 防“乱字/微缩图”回归)。
+function fanyi_tv_font_load()
+    local tex = dfhack.textures
+    if not (tex and tex.loadTileset and tex.getTexposByHandle) then
+        S.tv_font.installed = false
+        return false, 'dfhack.textures API 不可用'
+    end
+    local dir = (dfhack.getDFPath and dfhack.getDFPath() or '.') .. '/hack/data/textviewer-font/'
+    local fh = io.open(dir .. 'index.json', 'r')
+    if not fh then
+        S.tv_font.installed = false
+        return false, '未安装字形图集(' .. dir
+            .. '; scripts/generate_font_atlas.py --subset 800 --scale 2 产出)'
+    end
+    local data = fh:read('*a')
+    fh:close()
+    local ok, index = pcall(JSON.decode, data)
+    if not ok or type(index) ~= 'table' or type(index.pages) ~= 'table' then
+        S.tv_font.installed = false
+        return false, 'index.json 解析失败'
+    end
+    local by_cp = {}
+    local scale = tonumber(index.scale) or 1
+    for _, page in ipairs(index.pages) do
+        local handles = tex.loadTileset(
+            dir .. page.png, index.tile_w or 8, index.tile_h or 12, true)
+        if type(handles) ~= 'table' then
+            S.tv_font.installed = false
+            return false, 'loadTileset 失败: ' .. tostring(page.png)
+        end
+        local cols = tonumber(page.cols) or 64
+        for i, cp in ipairs(page.cps) do
+            if scale == 2 then
+                -- 大字模式: 每字占 scale²=4 格, 生成端字 i(0基)起始 tile=i*2,
+                -- 四片 = [t, t+1, t+cols, t+cols+1](与 generate_font_atlas.py 严格对应)
+                local t = (i - 1) * 2
+                by_cp[cp] = {
+                    handles[t + 1], handles[t + 2],
+                    handles[t + cols + 1], handles[t + cols + 2],
+                }
+            else
+                by_cp[cp] = handles[i]
+            end
+        end
+    end
+    S.tv_font.tex = tex
+    S.tv_font.by_cp = by_cp
+    S.tv_font.tile_w = index.tile_w or 8
+    S.tv_font.tile_h = index.tile_h or 12
+    S.tv_font.scale = scale
+    S.tv_font.installed = true
+    S.tv_font.tried = false
+    return true
+end
+
+-- 当前 textviewer 页(标题+全文哈希 → event_id; 与 capture_textviewer 同一拼接规则)
+local function tv_current_page()
+    local ok, vs = pcall(dfhack.gui.getCurViewscreen)
+    if not ok or not vs then return nil end
+    local cur = vs
+    while cur do
+        local okc, is_tv = pcall(function()
+            return df and df.viewscreen_textviewerst ~= nil
+               and df.viewscreen_textviewerst:is_instance(cur)
+        end)
+        if okc and is_tv then
+            local ok_b, full, title = pcall(function()
+                local t = tostring(cur.title or '')
+                local parts = {}
+                if #t > 0 then parts[#parts + 1] = t end
+                for i = 0, #cur.text - 1 do
+                    local ln = tostring(cur.text[i] or '')
+                    if #ln > 0 then parts[#parts + 1] = ln end
+                end
+                return table.concat(parts, '\n'), t
+            end)
+            if ok_b and full and #full >= 10 then
+                return {event_id = 'tv-' .. fnv1a(full), title = title or '', text = full}
+            end
+            return nil
+        end
+        cur = cur.parent
+    end
+    return nil
+end
+
+-- textviewer 控件矩形(0 基格坐标): 优先 DFHack 面板 API(存在则精确),
+-- 不可用 → 居中内容区兑底(欢迎/教程弹窗居中且边距稳定; ticket-016 E2E 可调)。
+function fanyi_textviewer_rect(max_cols, max_rows)
+    max_cols = tonumber(max_cols) or 80
+    max_rows = tonumber(max_rows) or 25
+    local ok, box = pcall(function()
+        local g = dfhack.gui or {}
+        if g.getPanelLayout then
+            local layout = g.getPanelLayout()
+            local panel = layout and layout.TEXTVIEWER
+            if type(panel) == 'table' and panel.x1 and panel.y1 and panel.x2 and panel.y2 then
+                return {x = panel.x1, y = panel.y1,
+                        w = panel.x2 - panel.x1 + 1, h = panel.y2 - panel.y1 + 1}
+            end
+        end
+        error('panel layout unavailable')
+    end)
+    if ok and type(box) == 'table' and box.w and box.h and box.w > 0 and box.h > 0 then
+        return box
+    end
+    local x = math.max(1, math.floor(max_cols * 0.1))
+    return {x = x, y = 3, w = max_cols - 2 * x, h = max_rows - 6}
+end
+
+-- 贴图绘制(纯逻辑, dc 由调用方注入; 返回绘制格数): 在 textviewer 矩形内贴中文,
+-- 缺字形跳格; 门控关闭/图集未装/无译文时返回 0(§2.3 静默原文)。
+function fanyi_paint_textviewer(dc, max_cols, max_rows)
+    if not S.tv_on then return 0 end
+    if not dc then return 0 end
+    if not S.tv_font.installed then
+        if S.tv_font.tried then return 0 end  -- 每会话只试一次(图集静态, 不反复 IO)
+        S.tv_font.tried = true
+        fanyi_tv_font_load()
+        if not S.tv_font.installed then return 0 end
+    end
+    local page = tv_current_page()
+    if not page then return 0 end
+    local rect = fanyi_textviewer_rect(max_cols, max_rows)
+    local rec = S.tv_cache[page.event_id]
+    if not rec then
+        -- 翻译未就绪: 登记 inline 请求(tick 统一发送), 画淡显 "..." 占位(ASCII)
+        if not S.tv_inline_sent[page.event_id] and S.sent[page.event_id] == nil
+            and not S.tv_want_inline[page.event_id] then
+            S.tv_want_inline[page.event_id] = {text = page.text, title = page.title}
+            local keys = {}
+            for k in pairs(S.tv_want_inline) do keys[#keys + 1] = k end
+            if #keys > 64 then
+                for i = 1, #keys - 32 do S.tv_want_inline[keys[i]] = nil end
+            end
+        end
+        if (S.sent[page.event_id] ~= nil or S.tv_inline_sent[page.event_id])
+            and dc.string then
+            pcall(function() dc:seek(rect.x, rect.y):string('...') end)
+        end
+        return 0
+    end
+    local scale = S.tv_font.scale or 1
+    local resolve = S.tv_font.tex and S.tv_font.tex.getTexposByHandle or nil
+    if not resolve then return 0 end
+    local vis_cols = math.floor(rect.w / scale)
+    local vis_rows = math.floor(rect.h / scale)
+    -- 全文 → 段 → 行(先按换行拆段, 再按宽度折行; 超行保留首屏, textviewer 自身可滚动)
+    local rows = {}
+    for seg in (rec.text .. '\n'):gmatch('([^\n]*)\n') do
+        if #seg > 0 then
+            for _, r in ipairs(fanyi_wrap_line(seg, vis_cols)) do
+                rows[#rows + 1] = r
+            end
+        end
+    end
+    while #rows > vis_rows do table.remove(rows) end
+    local function tile_at(h, x, y)
+        if not h then return false end
+        if scale == 2 and type(h) == 'table' then
+            local t1, t2 = resolve(h[1]), resolve(h[2])
+            local t3, t4 = resolve(h[3]), resolve(h[4])
+            if t1 and t1 > 0 and t2 and t2 > 0 and t3 and t3 > 0 and t4 and t4 > 0 then
+                dc:seek(x, y):tile(' ', t1)
+                dc:seek(x + 1, y):tile(' ', t2)
+                dc:seek(x, y + 1):tile(' ', t3)
+                dc:seek(x + 1, y + 1):tile(' ', t4)
+                return true
+            end
+            return false
+        elseif type(h) ~= 'table' then
+            local tp = resolve(h)
+            if tp and tp > 0 then
+                dc:seek(x, y):tile(' ', tp)
+                return true
+            end
+        end
+        return false
+    end
+    local painted = 0
+    for ri, line in ipairs(rows) do
+        local x, y = rect.x, rect.y + (ri - 1) * scale
+        for _, cp in ipairs(fanyi_utf8_codepoints(line)) do
+            if x + scale > rect.x + rect.w then break end
+            if tile_at(S.tv_font.by_cp[cp], x, y) then
+                painted = painted + (scale == 2 and 4 or 1)
+            end
+            x = x + scale
+        end
+    end
+    return painted
+end
+
+-- 待发 inline 请求冲刷(tick 内调用, 引擎在线时): 每页只请求一次,
+-- 重开同页命中引擎段落缓存秒回(预算铁律: 不重译)。
+local function tv_flush_inline_requests()
+    if not S.engine_online then return end
+    local client = S.client
+    if not client then return end
+    for event_id, req in pairs(S.tv_want_inline) do
+        if not S.tv_inline_sent[event_id] then
+            S.tv_inline_sent[event_id] = true
+            local ok = send_line(client, rpc_request('inline_translate', {
+                text = req.text, context = 'textviewer',
+                title = req.title or '', event_id = event_id,
+            }))
+            if not ok then
+                S.tv_inline_sent[event_id] = nil
+                disconnect('inline send failed')
+                return
+            end
+        end
+    end
+    S.tv_want_inline = {}
+    local keys = {}
+    for k in pairs(S.tv_inline_sent) do keys[#keys + 1] = k end
+    if #keys > 128 then
+        for i = 1, #keys - 64 do S.tv_inline_sent[keys[i]] = nil end
+    end
+end
+
+-- overlay 小部件(官方 overlay 插件, 名字 fanyi.textviewer):
+-- 仅在 viewscreen_textviewerst 激活(离开弹窗 → overlay 框架自动不再渲染, 中文
+-- 随之消失); 全屏裁剪框 + 内部按 textviewer 矩形自定位, 不挡其他界面。
+TextviewerInline = defclass(TextviewerInline, overlay.OverlayWidget)
+TextviewerInline.ATTRS = TextviewerInline.ATTRS or {}
+TextviewerInline.ATTRS.desc = 'DF-FanYi textviewer 内嵌翻译(弹窗原文区域覆盖中文)'
+TextviewerInline.ATTRS.default_pos = {x = 0, y = 0}
+TextviewerInline.ATTRS.default_enabled = true
+TextviewerInline.ATTRS.viewscreens = {'viewscreen_textviewerst'}
+TextviewerInline.ATTRS.frame = {l = 0, t = 0, r = 0, b = 0}
+
+function TextviewerInline:onRenderFrame(dc, arg2, arg3)
+    -- 双调用形态: overlay 框架 (painter, rect表) / 无头测试 (dc, cols, rows)
+    local cols, rows = 80, 25
+    if type(arg2) == 'table' and arg2.w then
+        cols, rows = tonumber(arg2.w) or 80, tonumber(arg2.h) or 25
+    elseif type(arg2) == 'number' then
+        cols, rows = arg2, (type(arg3) == 'number' and arg3 or 25)
+    end
+    return fanyi_paint_textviewer(dc, cols, rows)
+end
+
+-- overlay 插件扫描脚本全局 OVERLAY_WIDGETS 注册小部件(名字: fanyi.textviewer)
+OVERLAY_WIDGETS = {textviewer = TextviewerInline}
 
 local function tick()
     if S.state ~= 'running' then return end
@@ -521,6 +896,10 @@ local function tick()
             -- 读回(非阻塞)
             if S.client and S.engine_online then
                 pcall(drain_lines, handle_response)
+            end
+            -- ticket-013: textviewer inline_translate 待发请求(引擎在线时)
+            if S.client and S.engine_online then
+                pcall(tv_flush_inline_requests)
             end
         end
     end
@@ -585,9 +964,11 @@ function fanyi_status_lines()
             S.stats.captured, S.stats.sent, S.stats.recv,
             S.stats.done, S.stats.failed, S.stats.reconnect),
         -- ticket-012: 字幕条 widget 已删除. status 输出明确告知替代方案:
-        -- 公告由 announcement_inline (13), textviewer 弹窗由 textviewer_inline (14).
+        -- textviewer 弹窗由 textviewer_inline (ticket-013), 公告由 announcement_inline (ticket-014).
         ('  subtitle widget: removed (replaced by inline overlays) — '
-            .. 'announcement_inline: ticket-013, textviewer_inline: ticket-014'),
+            .. 'announcement_inline: ticket-014 (pending)'),
+        ('  textviewer_inline (%s) — 弹窗原文区域覆盖中文 (ticket-013)'):format(
+            S.tv_on and 'on' or 'off'),
     }
     local n_tv = 0
     for _ in pairs(S.seen_tv_hashes) do n_tv = n_tv + 1 end
@@ -645,16 +1026,37 @@ function fanyi_command(args)
         elseif sub == 'on' then
             if which == 'cjk' then
                 print('字幕条已删除 (ticket-012). 请使用 textviewer 或 announcement.')
-            elseif which == 'textviewer' or which == 'announcement' then
-                print(('overlays on %s: 等待 ticket-013/014 注册 inline widget'):format(which))
+            elseif which == 'textviewer' then
+                S.tv_on = true
+                local ok, err = fanyi_tv_font_load()
+                pcall(function()
+                    dfhack.run_command('overlay', 'enable', 'fanyi.textviewer')
+                end)
+                if ok then
+                    print('textviewer_inline 已开启: 弹窗原文区域将覆盖中文'
+                        .. '(缺字形的字回退英文; 重开同页命中缓存秒回)')
+                else
+                    print('textviewer_inline 已开启(图集未装: ' .. tostring(err)
+                        .. '; 弹窗显示英文原文)')
+                end
+            elseif which == 'announcement' then
+                print('overlays on announcement: 等待 ticket-014 注册 announcement_inline widget')
             else
                 print('用法: fanyi overlays on|off [textviewer|announcement]')
             end
         elseif sub == 'off' then
             if which == 'cjk' then
                 print('字幕条已删除 (ticket-012), 无需关闭.')
-            elseif which == 'textviewer' or which == 'announcement' then
-                print(('overlays off %s: 等待 ticket-013/014 注册 inline widget'):format(which))
+            elseif which == 'textviewer' then
+                S.tv_on = false
+                S.tv_cache = {}
+                S.tv_want_inline = {}
+                pcall(function()
+                    dfhack.run_command('overlay', 'disable', 'fanyi.textviewer')
+                end)
+                print('textviewer_inline 已关闭(弹窗显示英文原文)')
+            elseif which == 'announcement' then
+                print('overlays off announcement: 等待 ticket-014 注册 announcement_inline widget')
             else
                 print('译文悬浮已关闭(游戏显示原文)')
             end
@@ -685,7 +1087,8 @@ function fanyi_command(args)
   fanyi status              状态/统计
   fanyi start|stop          启停捕获+轮询(--@ enable=true 默认自启)
   fanyi overlays on|off [textviewer|announcement]
-                            内嵌 overlay 开关 (字幕条已删除 ticket-012)
+                            内嵌 overlay 开关 (字幕条已删除 ticket-012;
+                            textviewer: 弹窗原文区域覆盖中文, ticket-013)
   fanyi clear              清空显示与去重
   fanyi debug              内部细节
 ]])

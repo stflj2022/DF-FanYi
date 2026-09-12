@@ -327,6 +327,75 @@ elseif scenario == 'mouseselect' then
     assert_eq(st.ms.visible, true, '空选区也显示提示浮窗')
     assert_match(st.ms.rows[1], '无文本可翻译', '空选区提示正确')
 
+elseif scenario == 'mouseselect_noatlas' then
+    -- 2026-09-12 豆腐修复: 图集不可用时, F11 提示/浮窗必须回退 ASCII 英文行,
+    -- 绝不让中文进 dc:string(CP437 无 CJK → 豆腐)。harness 无 dfhack.textures
+    -- → fanyi_tv_font_load 必败, 天然模拟「无图集」实机。
+    M.set_version('53.06', '53.06-r1')
+    M.engine_up = true
+    M.load({'start'}, {})
+    M.step(20)
+    local MouseSelect = M.env.MouseSelect
+    assert(MouseSelect, 'MouseSelect widget 已注册')
+
+    -- 1. F11: 命令时刻懒加载图集(harness 必败) + rows_ascii 就位
+    M.load({'mouseselect'}, {})
+    local st = M.state()
+    local tvf = st.tv_font or {}
+    assert_eq(tvf.tried, true, 'F11 命令已尝试加载图集(tried=true)')
+    assert_eq(tvf.installed, false, 'harness 无图集: installed=false')
+    assert(st.ms.rows_ascii and #st.ms.rows_ascii >= 1, 'rows_ascii 已就位')
+    assert_match(st.ms.rows_ascii[1], 'Drag box', 'ASCII 提示行内容正确')
+
+    -- 2. 渲染: dc:string 收到的每一行都必须纯 ASCII(无豆腐可能)
+    local lines = {}
+    local dcb = {n = 0, pen = function(s) return s end,
+                 seek = function(s) return s end,
+                 string = function(s, str) s.n = s.n + 1; lines[#lines + 1] = str; return s end,
+                 tile = function(s) return s end}
+    local h = MouseSelect:onRenderFrame(dcb, 80, 25)
+    assert(h >= 3, '提示框高度 >= 3, got: ' .. tostring(h))
+    assert(#lines >= 2, 'dc:string 至少画两行内容, got ' .. tostring(#lines))
+    for i, ln in ipairs(lines) do
+        for j = 1, #ln do
+            assert(ln:byte(j) <= 127,
+                'dc:string 行 ' .. i .. ' 含非 ASCII 字节(豆腐风险): ' .. tostring(ln:byte(j)))
+        end
+    end
+
+    -- 3. 翻译回填后(无图集): rows_ascii = 原文英文 + [F12] close
+    M.set_screen({
+        {' ', 'T', 'h', 'e', ' ', 'g', 'o', 'b', 'l', 'i', 'n', ' ', 's', 'm', 'e', 'l', 'l', 's', ' ', 'f', 'e', 'a', 'r', '.', ' '},
+    })
+    M.mouse_x, M.mouse_y = 0, 0
+    local enabler = M.env.df.global.enabler
+    enabler.mouse_lbut = 1
+    MouseSelect:onRenderFrame(dcb, 80, 25)
+    M.mouse_x, M.mouse_y = 23, 0
+    enabler.mouse_lbut = 0
+    MouseSelect:onRenderFrame(dcb, 80, 25)
+    M.engine_auto_respond('地精散发出恐惧的气息。', 0.95)
+    M.step(40)
+    st = M.state()
+    assert(st.ms.rows_ascii and #st.ms.rows_ascii >= 2, '回填后 rows_ascii 存在')
+    assert_match(st.ms.rows_ascii[1], 'goblin', 'rows_ascii 首行是原文英文')
+    local has_close = false
+    for _, r in ipairs(st.ms.rows_ascii) do
+        if r == '[F12] close' then has_close = true end
+    end
+    assert(has_close, 'rows_ascii 含 [F12] close')
+
+    -- 4. 无图集下再次渲染: 仍全 ASCII
+    lines = {}
+    dcb.n = 0
+    h = MouseSelect:onRenderFrame(dcb, 80, 25)
+    assert(h >= 1, '翻译浮窗渲染返回 > 0')
+    for i, ln in ipairs(lines) do
+        for j = 1, #ln do
+            assert(ln:byte(j) <= 127, '回填后渲染行 ' .. i .. ' 含非 ASCII 字节')
+        end
+    end
+
 else
     error('unknown scenario: ' .. scenario)
 end

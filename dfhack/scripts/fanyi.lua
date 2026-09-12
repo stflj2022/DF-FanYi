@@ -1140,13 +1140,23 @@ function fanyi_mouseselect_cmd()
     if not S.engine_online then
         -- 退路: 状态仍点亮浮窗, 让用户看到离线提示
         S.ms = {visible=true, text='', translation='[离线] 翻译引擎未连接, 请检查 DF-FanYi 桥。',
-                event_id=nil, rows={'[离线] 翻译引擎未连接'}, rect=nil, started=dfhack.getTickCount()}
+                event_id=nil, rows={'[离线] 翻译引擎未连接'}, rect=nil, started=dfhack.getTickCount(),
+                rows_ascii={'[Offline] translation engine not connected'}}
         return
+    end
+    -- 图集懒加载提前到命令时刻: F11 常是本会话第一个要画 CJK 的路径,
+    -- 公告(53.06 无面板矩形)与 textviewer(未开弹窗)都不会触发加载,
+    -- 不在此加载则 paint_cjk_rows 返回 0 → 中文进 dc:string = 豆腐
+    -- (2026-09-12 实机确认: F11 提示条两行全方块)。
+    if not S.tv_font.installed and not S.tv_font.tried then
+        S.tv_font.tried = true
+        fanyi_tv_font_load()
     end
     S.ms = {visible=true, selecting=true, drag=nil,
             text='', translation='', event_id=nil,
             rows={'拖框选择要翻译的文本', '右键或 F12 取消'},
-            rect=nil, started=dfhack.getTickCount()}
+            rect=nil, started=dfhack.getTickCount(),
+            rows_ascii={'Drag box over text to translate', 'RMB or F12: cancel'}}
 end
 
 -- 框选释放: 读选区文本并发起 inline 翻译(由 MouseSelect:onRenderFrame 帧驱动调用)
@@ -1158,6 +1168,7 @@ function fanyi_ms_select_rect(x1, y1, x2, y2)
         S.ms.drag = nil
         S.ms.visible = true
         S.ms.rows = {'[无文本可翻译]', '选区内没有可识别的英文(地图区是图形无文本)'}
+        S.ms.rows_ascii = {'[No text to translate]', 'No English text in selection'}
         return
     end
     local event_id = 'ms-'..tostring(dfhack.getTickCount())
@@ -1168,12 +1179,14 @@ function fanyi_ms_select_rect(x1, y1, x2, y2)
     S.ms.drag = nil
     if not ok then
         S.ms = {visible=true, text=seg, translation='[发送失败] 翻译请求未送出, 可能是断线重连中。',
-                event_id=nil, rows={seg, '[发送失败]'}, rect=nil, started=dfhack.getTickCount()}
+                event_id=nil, rows={seg, '[发送失败]'}, rect=nil, started=dfhack.getTickCount(),
+                rows_ascii={seg:sub(1, 38), '[Send failed]'}}
         return
     end
     -- 记录请求, 等 fetch_done 回调填回译文
     S.ms = {visible=true, text=seg, translation='', event_id=event_id,
-            rows={seg, '[翻译中...]'}, rect=nil, started=dfhack.getTickCount()}
+            rows={seg, '[翻译中...]'}, rect=nil, started=dfhack.getTickCount(),
+            rows_ascii={seg:sub(1, 38), '[Translating...]:'}}
     S.ms_pending = S.ms_pending or {}
     S.ms_pending[event_id] = seg
 end
@@ -1214,6 +1227,11 @@ function fanyi_ms_apply_translation(event_id, translated_text)
     out[#out+1] = '[F12] 关闭'
     S.ms.translation = txt
     S.ms.rows = out
+    -- ASCII 兜底行(图集未装时): 原文英文 + 关闭提示, 避免译文中文变豆腐
+    local asc = fanyi_wrap_line(S.ms.text or '', 38)
+    asc[#asc + 1] = ''
+    asc[#asc + 1] = '[F12] close'
+    S.ms.rows_ascii = asc
     S.ms_pending[event_id] = nil
 end
 
@@ -1221,7 +1239,17 @@ end
 local function fanyi_paint_mouseselect(dc, max_cols, max_rows)
     if not S.ms or not S.ms.visible then return 0 end
     if not dc then return 0 end
+    -- 图集懒加载(与 textviewer/announcement 共用 tried 标记): 命令时刻已试过
+    -- 一次, 这里兜底直接 onRenderFrame 调用的路径(如脚本重载后)。
+    if not S.tv_font.installed and not S.tv_font.tried then
+        S.tv_font.tried = true
+        fanyi_tv_font_load()
+    end
     local rows = S.ms.rows or {}
+    if not S.tv_font.installed and S.ms.rows_ascii then
+        -- 图集不可用: 画 ASCII 行, 中文进 dc:string 必豆腐(CP437 无 CJK)
+        rows = S.ms.rows_ascii
+    end
     if #rows == 0 then return 0 end
     -- 尺寸: 宽 50, 高 #rows + 2 边框
     local w = math.min(60, math.max(20, max_cols // 2))
@@ -1247,7 +1275,8 @@ local function fanyi_paint_mouseselect(dc, max_cols, max_rows)
     local inner = {x = rect.x + 1, y = rect.y + 1, w = rect.w - 2, h = rect.h - 2}
     local painted = paint_cjk_rows(dc, rows, inner)
     if painted == 0 then
-        -- 图集未装时的兜底(纯 ASCII 场景)
+        -- 图集未装/图集缺全部字形时的兜底(此路径 rows 已是 rows_ascii,
+        -- 纯 ASCII 走 dc:string 不出豆腐)
         for i, line in ipairs(rows) do
             local yy = rect.y + i
             if yy >= rect.y + rect.h - 1 then break end

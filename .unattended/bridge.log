@@ -1,0 +1,17 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 203, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/wu/DF-FanYi/df_fanyi/__main__.py", line 7, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/home/wu/DF-FanYi/df_fanyi/cli.py", line 141, in main
+    return _cmd_bridge(args)
+  File "/home/wu/DF-FanYi/df_fanyi/cli.py", line 288, in _cmd_bridge
+    server.start()
+    ~~~~~~~~~~~~^^
+  File "/home/wu/DF-FanYi/df_fanyi/bridge/server.py", line 155, in start
+    listen = self._open_listener()
+  File "/home/wu/DF-FanYi/df_fanyi/bridge/server.py", line 205, in _open_listener
+    sock.bind((self.host, self.port))
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 98] Address already in use

@@ -47,6 +47,20 @@ def test_mouseselect_scenario_passes() -> None:
     assert "PASS [mouseselect]" in out.stdout
 
 
+def test_mouseselect_noatlas_scenario_passes() -> None:
+    """2026-09-12 豆腐修复: 无图集时 F11 提示/浮窗回退纯 ASCII 英文行,
+    dc:string 收到的每一行都不含非 ASCII 字节(中文进 CP437 必豆腐)。"""
+    out = subprocess.run(
+        [LUA, str(REPO / "tests/lua/run_fanyi_tests.lua"),
+         "mouseselect_noatlas", str(REPO), str(TMPDIR_BASE)],
+        capture_output=True, text=True, timeout=120,
+    )
+    assert out.returncode == 0, (
+        f"mouseselect_noatlas scenario FAILED\nstdout={out.stdout!r}\nstderr={out.stderr!r}"
+    )
+    assert "PASS [mouseselect_noatlas]" in out.stdout
+
+
 def test_mouseselect_widget_registered(tmp) -> None:
     """F11 widget 'mouse_select' 已在 OVERLAY_WIDGETS 注册, 可被 enable。"""
     snippet = (

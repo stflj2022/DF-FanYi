@@ -394,3 +394,29 @@ Error: Unknown option: -m
 [2026-09-12 09:30:54] === ROUND 2 ===
 [2026-09-12 09:30:54] Provider: pi-primary
 [2026-09-12 09:30:54] Starting AI agent...
+<think>Done. Ticket-014 committed, pushed, handoff logged. 
+
+Summary for the user (unattended driver output):
+- ticket-014 done, committed c2aff3d, pushed to origin/main
+- 387 tests pass (9 new + 378 existing)
+- Remaining: 015 (P2 paragraph cache), 016 (P0 E2E)</think>
+
+工单 **ticket-014** 已完成。
+
+| 项 | 结果 |
+|---|---|
+| 工单状态 | `pending` → `done`, 验收全部 ✅ |
+| 测试 | `tests/test_announcement_inline.py` 新增 9 项(引擎 2 + 无头 7),全量回归 **387 全绿** |
+| Commit | `c2aff3d feat(announcement): ticket-014 公告面板内嵌翻译覆盖层` |
+| Push | `origin/main` 已同步 |
+
+**实现要点**
+- `S.ann_cache` + `ann_ttl_ms` 默认 90s(`FANYI_ANN_TTL_MS` 可调),过期原文自然显示
+- 复用 ticket-013 `S.tv_font` 字形图集 +提取 `paint_cjk_rows` 共用贴图
+- 多公告策略:最新在前最多 4 行,历史每条 1 行缩短,有界 `vis_rows`
+- 面板矩形:优先 `getPanelLayout().ANNOUNCEMENT`,兜底 `{x=cols-40, y=rows-15, w=40, h=10}`
+- 翻译路由双路径:常规 translate 队列为主;`inline_translate(context='announcement')` 为引擎段落缓存秒回副路径,flush 时 `S.sent` 已登记跳过(**预算铁律:同文本不双发**)
+- `OVERLAY_WIDGETS = {textviewer = ..., announcement = AnnouncementInline}`,`fanyi overlays on|off announcement` 真实开关 + `fanyi status` 输出 `announcement_inline (on/off)` + 缓存条数/TTL
+
+**待办(剩余 pending)**:015(段落缓存优化 P2,可延后)、016(E2E 无字幕条 P0,需用户重启游戏验证)。
+[2026-09-12 09:40:54] ✅ Round completed successfully

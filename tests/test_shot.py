@@ -15,7 +15,9 @@ from df_fanyi.shot import (
     OcrWord,
     assemble_paragraphs,
     collapse_cjk_spaces,
+    merge_dual_ocr,
     parse_tsv,
+    preprocess_image,
     render_markdown,
     split_runs,
     translate_paragraphs,
@@ -132,6 +134,123 @@ class TestAssembleParagraphs:
         assert len(set(pars)) == 12
 
 
+class TestPreprocess:
+    def test_small_image_upscaled(self, tmp_path):
+        from PIL import Image
+
+        p = tmp_path / "small.png"
+        Image.new("RGB", (100, 50), (10, 10, 10)).save(p)
+        out = preprocess_image(str(p))
+        assert out != str(p)
+        w, h = Image.open(out).size
+        assert (w, h) == (200, 100)
+        assert Image.open(out).mode == "L"
+
+    def test_huge_image_skipped(self, tmp_path):
+        from PIL import Image
+
+        p = tmp_path / "big.png"
+        Image.new("RGB", (2000, 1200), (10, 10, 10)).save(p)  # 2.4MP > 2MP
+        assert preprocess_image(str(p)) == str(p)
+
+
+class TestMergeDualOcr:
+    """双通道合并: 英文信 eng, 中文信 chi_sim+语料成词判据。"""
+
+    def test_garbage_misread_dropped_by_bigram(self):
+        # mixed 把英文 number 误读成 坤敏壁; 语料不成词 → 幻觉丢弃
+        eng = [OcrWord(1, 1, 1, 100, 90.0, "number", top=10, width=80, height=20)]
+        mixed = [OcrWord(1, 1, 1, 100, 80.0, "坤敏壁", top=10, width=80, height=20)]
+        merged = merge_dual_ocr(eng, mixed, zh_bigrams={"任务", "工坊"})
+        texts = [w.text for w in merged]
+        assert "number" in texts and "坤敏壁" not in texts
+
+    def test_real_chinese_not_vetoed_by_eng_junk(self):
+        # eng 把真中文 工坊 读成 T3(conf62); bigram 判据为主, 工坊必须在
+        eng = [OcrWord(1, 1, 1, 860, 62.0, "T3", top=26, width=40, height=20)]
+        mixed = [
+            OcrWord(1, 1, 1, 859, 82.0, "工", top=26, width=40, height=20),
+            OcrWord(1, 1, 1, 897, 97.0, "坊", top=22, width=40, height=20),
+        ]
+        merged = merge_dual_ocr(eng, mixed, zh_bigrams={"工坊"})
+        texts = [w.text for w in merged]
+        assert "工" in texts and "坊" in texts
+
+    def test_garbage_run_filtered_by_bigram_corpus(self):
+        # eng 低置信读不出(无重叠词), 但 榭些 不在语料不成词 → 幻觉丢弃
+        mixed = [
+            OcrWord(1, 1, 1, 100, 85.0, "榭", top=10, width=40, height=20),
+            OcrWord(1, 1, 1, 140, 85.0, "些", top=10, width=40, height=20),
+        ]
+        merged = merge_dual_ocr([], mixed, zh_bigrams={"任务", "工坊"})
+        assert merged == []
+
+    def test_real_run_kept_by_bigram_corpus(self):
+        # 任+务 拼串成 任务 在语料 → 两字都保留(单字无 bigram, 必须先拼串)
+        mixed = [
+            OcrWord(1, 1, 1, 100, 85.0, "任", top=10, width=40, height=20),
+            OcrWord(1, 1, 1, 140, 97.0, "务", top=10, width=40, height=20),
+        ]
+        merged = merge_dual_ocr([], mixed, zh_bigrams={"任务", "工坊"})
+        assert "".join(w.text for w in merged if "\u4e00" <= w.text <= "\u9fff") == "任务"
+
+    def test_big_gap_splits_runs(self):
+        # 榭些[大间隙]数量 → 两串: 垃圾串丢, 真词串(数量)留
+        mixed = [
+            OcrWord(1, 1, 1, 100, 45.0, "榭", top=10, width=40, height=20),
+            OcrWord(1, 1, 1, 140, 89.0, "些", top=10, width=40, height=20),
+            OcrWord(1, 1, 1, 300, 96.0, "数", top=10, width=40, height=20),
+            OcrWord(1, 1, 1, 340, 87.0, "量", top=10, width=40, height=20),
+        ]
+        merged = merge_dual_ocr([], mixed, zh_bigrams={"数量"})
+        assert "".join(w.text for w in merged if "\u4e00" <= w.text <= "\u9fff") == "数量"
+
+    def test_no_corpus_keeps_all(self):
+        # 语料不可用(空集) → 不做孤立剔除, 保留真中文(2字成词)
+        mixed = [
+            OcrWord(1, 1, 1, 100, 85.0, "任", top=10, width=20, height=20),
+            OcrWord(1, 1, 1, 130, 85.0, "意", top=10, width=20, height=20),
+        ]
+        assert "".join(w.text for w in merge_dual_ocr([], mixed)) == "任意"
+
+    def test_real_chinese_kept_and_adopts_eng_line(self):
+        # 真中文 UI(eng 读不到)不重叠 → 保留, 并继承同行 eng 词的分组 id
+        eng = [OcrWord(2, 1, 1, 300, 90.0, "orders", top=50, width=60, height=20)]
+        mixed = [
+            OcrWord(2, 1, 1, 100, 85.0, "工", top=50, width=20, height=20),
+            OcrWord(2, 1, 1, 125, 85.0, "单", top=50, width=20, height=20),
+            OcrWord(2, 1, 1, 300, 80.0, "orders", top=50, width=60, height=20),
+        ]
+        merged = merge_dual_ocr(eng, mixed, zh_bigrams={"工单"})
+        cjk = [w for w in merged if w.text in ("工", "单")]
+        assert len(cjk) == 2
+        assert (cjk[0].block, cjk[0].line) == (2, 1)  # 继承 eng 行
+
+    def test_pure_chinese_line_own_paragraph(self):
+        # 整行纯中文(无 eng 词) → 独立 block(1000+), 不会被丢
+        mixed = [
+            OcrWord(9, 1, 1, 10, 90.0, "地", top=100, width=20, height=20),
+            OcrWord(9, 1, 1, 35, 90.0, "点", top=100, width=20, height=20),
+        ]
+        merged = merge_dual_ocr([], mixed)
+        assert sorted(w.text for w in merged) == ["地", "点"]
+        assert all(w.block >= 1000 for w in merged)
+
+    def test_merged_assembly_mixed_order(self):
+        # 端到端小样本: 同一行 中文+英文+中文, 按位置拼接
+        eng = [OcrWord(1, 1, 1, 200, 90.0, "are", top=10, width=30, height=20)]
+        mixed = [
+            OcrWord(1, 1, 1, 100, 85.0, "工", top=10, width=20, height=20),
+            OcrWord(1, 1, 1, 125, 85.0, "单", top=10, width=20, height=20),
+            OcrWord(1, 1, 1, 240, 85.0, "物", top=10, width=20, height=20),
+            OcrWord(1, 1, 1, 265, 85.0, "品", top=10, width=20, height=20),
+        ]
+        merged = merge_dual_ocr(eng, mixed, zh_bigrams={"工单", "物品"})
+        pars = assemble_paragraphs(merged)
+        # mixed 通道每个汉字单字词输出, assemble_paragraphs 按词 join
+        assert pars == ["工 单 are 物 品"]
+
+
 class TestSplitRuns:
     def test_mixed_split(self):
         runs = split_runs("加能区 are placed 加能区")
@@ -181,6 +300,19 @@ class TestTranslateParallel:
         assert out[0]["zh"] == "地点已汉化"
         assert out[0]["provider"] == "passthrough"
         assert orch.calls == []  # 未耗 LLM
+
+    def test_translation_error_recorded_not_crash(self):
+        """某段翻译出错: 记录 error 不炸, 英文原文回退进合并结果。"""
+
+        class _ErrOrch:
+            def translate(self, text, context=None):
+                r = TestTranslateParallel._Result(text)  # text=原文回退
+                r.error = "provider 429"
+                return r
+
+        out = translate_paragraphs(["中文片段 english words"], _ErrOrch())
+        assert out[0]["error"] == "provider 429"
+        assert out[0]["zh"] == "中文片段english words"  # 回退原文仍在, 不崩
 
     def test_short_english_fragments_kept(self):
         """过短英文碎片(如 OCR 残片 x, ab)不值得送翻译, 原样保留。"""

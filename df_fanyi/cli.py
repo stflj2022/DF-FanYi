@@ -212,12 +212,20 @@ def _cmd_translate(args: argparse.Namespace) -> int:
 
 def _cmd_shot(args: argparse.Namespace) -> int:
     """截图翻译: OCR→段落→管线; 输出人读格式/JSON/仅中文。"""
-    from df_fanyi.shot import assemble_paragraphs, ocr_image, translate_paragraphs
+    from df_fanyi.shot import (
+        assemble_paragraphs,
+        load_zh_corpus,
+        ocr_image,
+        translate_paragraphs,
+    )
 
     cfg = _load_config(args)
+    from df_fanyi.database.store import resolve_store_path
+
+    zh_bigrams = load_zh_corpus(resolve_store_path(cfg))
     paragraphs: list[str]
     try:
-        paragraphs = assemble_paragraphs(ocr_image(args.image))
+        paragraphs = assemble_paragraphs(ocr_image(args.image, zh_bigrams=zh_bigrams))
     except (RuntimeError, subprocess.TimeoutExpired, FileNotFoundError) as exc:
         print(json.dumps({"error": str(exc)}, ensure_ascii=False) if args.json else f"OCR 失败: {exc}",
               file=sys.stderr)

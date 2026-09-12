@@ -8,8 +8,10 @@
 """
 from __future__ import annotations
 
+import os
 import re
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -23,6 +25,8 @@ __all__ = [
     "process_image",
     "render_markdown",
     "split_runs",
+    "merge_dual_ocr",
+    "load_zh_corpus",
 ]
 
 
@@ -36,6 +40,9 @@ class OcrWord:
     left: int
     conf: float
     text: str
+    top: int = 0
+    width: int = 0
+    height: int = 0
 
 
 _TSV_COLS = 12  # level page block par line word left top width height conf text
@@ -48,6 +55,27 @@ _CJK_CHAR = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f\uff00-\uffef]"
 _CJK_GAP = re.compile(r"(?<=[\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f])\s+(?=[\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f\uff00-\uffef])")
 
 _LOCAL_TESSDATA = Path.home() / ".local" / "share" / "tesseract" / "tessdata"
+_MAX_UPSCALE_PIXELS = 2_000_000  # 超过(整屏级)不放大, 防 OCR 变慢
+
+
+def preprocess_image(image_path: str) -> str:
+    """2x 放大+灰度: DF 位图字体在原生尺寸 OCR 噪声大(w→v/u, 汉字误读),
+    放大后 'ave used'→'are used', '坤敏壁'→'数量' 级改善。
+    PIL 缺失/大图/异常时原样返回。"""
+    try:
+        from PIL import Image
+    except ImportError:
+        return image_path
+    try:
+        img = Image.open(image_path)
+        if img.width * img.height > _MAX_UPSCALE_PIXELS:
+            return image_path
+        up = img.convert("L").resize((img.width * 2, img.height * 2), Image.LANCZOS)
+        out = Path(tempfile.gettempdir()) / f"fanyi-ocr-up-{os.getpid()}-{Path(image_path).stem}.png"
+        up.save(out)
+        return str(out)
+    except Exception:
+        return image_path
 
 
 def collapse_cjk_spaces(text: str) -> str:
@@ -87,14 +115,16 @@ def parse_tsv(raw: str, *, min_conf: float = 30.0) -> list[OcrWord]:
             if int(parts[0]) != 5:
                 continue
             block, par, line = int(parts[2]), int(parts[3]), int(parts[4])
-            left, conf = int(parts[6]), float(parts[10])
+            left, top = int(parts[6]), int(parts[7])
+            width, height = int(parts[8]), int(parts[9])
+            conf = float(parts[10])
         except ValueError:
             continue  # 表头/坏行
         text = parts[11].strip()
         # not (conf >= min) 同时拦住 nan(nan 与任何数比较均为 False)
         if not text or not (conf >= min_conf):
             continue
-        words.append(OcrWord(block, par, line, left, conf, text))
+        words.append(OcrWord(block, par, line, left, conf, text, top, width, height))
     return words
 
 
@@ -156,22 +186,202 @@ def assemble_paragraphs(words: list[OcrWord], *, max_par: int = 12) -> list[str]
     return pars
 
 
-def ocr_image(image_path: str, *, timeout: int = 30) -> list[OcrWord]:
-    """对图片跑 tesseract, 返回词条。
-
-    本地装了 chi_sim 时用 chi_sim+eng 双语(游戏屏常为中英混排:
-    内联汉化 overlay + 残留英文), 否则退回纯 eng。
-    """
+def _run_tesseract(src: str, langs: str, *, timeout: int) -> list[OcrWord]:
     cmd = ["tesseract"]
-    langs = "eng"
-    if (_LOCAL_TESSDATA / "chi_sim.traineddata").exists():
+    if langs != "eng":
         cmd += ["--tessdata-dir", str(_LOCAL_TESSDATA)]
-        langs = "chi_sim+eng"
-    cmd += [image_path, "stdout", "-l", langs, "tsv"]
+    cmd += [src, "stdout", "-l", langs, "tsv"]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     if proc.returncode != 0:
         raise RuntimeError(f"tesseract 失败: {proc.stderr.strip()[:200]}")
     return parse_tsv(proc.stdout)
+
+
+def _has_cjk(text: str) -> bool:
+    return bool(_CJK_CHAR.search(text))
+
+
+def load_zh_corpus(store_path: str | Path) -> set[str]:
+    """从翻译记忆/术语表提取 zh bigram 集合。
+
+    游戏屏上的真中文全部来自引擎自己的翻译(overlay 替换词),
+    因此“某 bigram 在语料中”就是“这是真中文”的可靠判据;
+    chi_sim 对位图英文的误读(坤敏壁/佐务)不会碰巧成词。
+    库不存在/异常 → 空集(过滤关闭, 全保留)。"""
+    try:
+        import sqlite3
+
+        conn = sqlite3.connect(f"file:{store_path}?mode=ro", uri=True)
+        texts = [r[0] or "" for r in conn.execute("SELECT translated_text FROM translation_memory")]
+        texts += [r[0] or "" for r in conn.execute("SELECT target FROM terminology")]
+        conn.close()
+    except Exception:
+        return set()
+    bigrams: set[str] = set()
+    for t in texts:
+        for i in range(len(t) - 1):
+            a, b = t[i], t[i + 1]
+            if "\u4e00" <= a <= "\u9fff" and "\u4e00" <= b <= "\u9fff":
+                bigrams.add(a + b)
+    return bigrams
+
+
+def _any_bigram_in(run: str, bigrams: set[str]) -> bool:
+    """run 中任一相邻汉字对在语料中成词 → 真中文。
+    单字不成词(无 bigram) → False(单独一个'目'这类噪声丢掉)。"""
+    if not bigrams:
+        return True  # 语料不可用 → 过滤关闭
+    for i in range(len(run) - 1):
+        if run[i : i + 2] in bigrams:
+            return True
+    return False
+
+
+def merge_dual_ocr(
+    eng_words: list[OcrWord],
+    mixed_words: list[OcrWord],
+    zh_bigrams: set[str] | None = None,
+) -> list[OcrWord]:
+    """双通道合并: 英文只信 eng, 中文只信 chi_sim。
+
+    用户规则: 识别到中文就跳过不翻译, 但原中文要与译文拼在一起。
+    关键洞见: chi_sim 会把游戏位图英文误读成垃圾中文(坤敏壁/刺作)。
+    判定法(以语料成词为唯一判据):
+    相邻 CJK 词拼串, 整串在 zh_bigrams(引擎翻译语料)中不成词
+    → chi_sim 幻觉垃圾(坤敏壁/榭些), 丢弃; 成词 → 真中文 UI → 保留。
+    注: 不用 eng 重叠否决 —— eng 会把真中文读成中等置信垃圾(T3@62)反而误杀。
+
+    纯中文行(无 eng 词)给独立 block 号(1000+), 让段落重组仍可分组;
+    混排行里的 CJK 词继承同行 eng 词的 (block,par,line)。
+    """
+    bigrams = zh_bigrams if zh_bigrams is not None else set()
+    cands = [w for w in mixed_words if _has_cjk(w.text)]
+    runs = _group_cjk_runs(cands)
+    pure_cjk: list[OcrWord] = []
+    for run_words in runs:
+        # 单字 CJK run 直接丢弃(DF UI 中文几乎都 ≥2 字)
+        if len(run_words) < 2:
+            continue
+        kept_words = _prune_cjk_run(run_words, bigrams)
+        if kept_words:
+            pure_cjk.extend(kept_words)
+
+    # 3) 行归属: 与 eng 词同行(top 接近)则继承其 (block,par,line)
+    def _adopt(w: OcrWord, ids: tuple[int, int, int]) -> OcrWord:
+        return OcrWord(ids[0], ids[1], ids[2], w.left, w.conf, w.text, w.top, w.width, w.height)
+
+    kept: list[OcrWord] = []
+    orphans: list[OcrWord] = []
+    for w in pure_cjk:
+        line_ids = None
+        for e in eng_words:
+            tol = max(e.height, w.height, 8) * 0.6
+            if abs(e.top - w.top) <= tol:
+                line_ids = (e.block, e.par, e.line)
+                break
+        if line_ids:
+            kept.append(_adopt(w, line_ids))
+        else:
+            orphans.append(w)
+
+    # 纯中文行自成段: 按 top 聚类, 每簇一个 block(1000+n), 行内按 line=1
+    orphans.sort(key=lambda w: w.top)
+    cluster_top = None
+    cluster_idx = 0
+    for w in orphans:
+        if cluster_top is None or w.top - cluster_top > 2.5 * max(w.height, 1):
+            cluster_idx += 1
+            cluster_top = w.top
+        kept.append(_adopt(w, (1000 + cluster_idx, 1, 1)))
+    # 4) eng 噪声过滤: 保留的 CJK 区域, eng 读出中等置信垃圾(T3@工坊)
+    # 会混入输出。要从 eng_words 里丢掉与任何 kept CJK 重叠的词。
+    def _overlap(a: OcrWord, b: OcrWord) -> bool:
+        if not (a.width and b.width):
+            return False
+        ox = min(a.left + a.width, b.left + b.width) - max(a.left, b.left)
+        oy = min(a.top + a.height, b.top + b.height) - max(a.top, b.top)
+        return ox > 0 and oy > 0
+
+    filtered_eng = [e for e in eng_words if not any(_overlap(e, k) for k in kept)]
+    return kept + filtered_eng
+
+
+def _prune_cjk_run(run_words: list[OcrWord], bigrams: set[str]) -> list[OcrWord]:
+    """剔除 run 中不参与任何语料 bigram 的孤立字符。
+
+    '数量目' → 数量✓ + 目(无 bigram 邻居) → 只留 数量
+    '制作木制偷物箱' → 制作/木制/物箱✓ + 偷(无 bigram 邻居) → 只留真词
+    '榭些' → 整串无 bigram → 全部丢掉
+    """
+    if not bigrams:
+        return run_words  # 语料不可用 → 不做孤立剔除
+    if len(run_words) < 2:
+        return []
+    text = "".join(w.text for w in run_words)
+    keep_idx: set[int] = set()
+    for i in range(len(text) - 1):
+        if text[i : i + 2] in bigrams:
+            keep_idx.add(i)
+            keep_idx.add(i + 1)
+    return [run_words[i] for i in sorted(keep_idx)]
+
+
+def _group_cjk_runs(words: list[OcrWord]) -> list[list[OcrWord]]:
+    """同一行(顶部接近)且横向间隙 ≤ 1.2×字宽的 CJK 词拼成一串。
+    mixed 通道常把每个汉字输出为单字词, 成词测试必须先拼串:
+    '任','务' → '任务'✓  '榭','些' → '榭些'✗。
+    拼接顺序必须 left→right(阅读顺序)。
+    1) 按 top 聚行(绝对 top 差 ≤ 行高半值); 2) 行内按 left 排序; 3) 按横向间隙分组。
+    """
+    ws = sorted(words, key=lambda w: w.top)
+    lines: list[list[OcrWord]] = []
+    cur: list[OcrWord] = []
+    line_top = 10**9
+    for w in ws:
+        line_h = max(w.height, 8)
+        if cur and w.top - cur[0].top > max(line_h, 12):
+            lines.append(cur)
+            cur = []
+        cur.append(w)
+    if cur:
+        lines.append(cur)
+    runs: list[list[OcrWord]] = []
+    for line in lines:
+        line.sort(key=lambda w: w.left)
+        cur_run: list[OcrWord] = []
+        right = -1
+        for w in line:
+            w_char_w = max(w.width, 10)
+            near = cur_run and (w.left - right) <= 1.2 * w_char_w
+            if not near:
+                if cur_run:
+                    runs.append(cur_run)
+                cur_run = []
+            cur_run.append(w)
+            right = w.left + w.width
+        if cur_run:
+            runs.append(cur_run)
+    return runs
+
+
+def ocr_image(
+    image_path: str, *, timeout: int = 60, zh_bigrams: set[str] | None = None
+) -> list[OcrWord]:
+    """对图片跑 OCR, 返回词条(双通道合并后)。
+
+    - eng 通道: 英文准确(不会产生中文垃圾)
+    - chi_sim+eng 通道: 只取其中的真中文(供保留拼接), 判定:
+      与 eng 高置信词重叠=英文误读丢弃; zh_bigrams 不成词=幻觉丢弃
+    本地无 chi_sim 时退回纯 eng 单通道。
+    """
+    src = preprocess_image(image_path)
+    eng_words = _run_tesseract(src, "eng", timeout=timeout)
+    # 滤掉纯符号词(¥/•): 不是文本, 只会污染翻译与质量门
+    eng_words = [w for w in eng_words if re.search(r"[A-Za-z0-9]", w.text)]
+    if not (_LOCAL_TESSDATA / "chi_sim.traineddata").exists():
+        return eng_words
+    mixed_words = _run_tesseract(src, "chi_sim+eng", timeout=timeout)
+    return merge_dual_ocr(eng_words, mixed_words, zh_bigrams)
 
 
 def _needs_translation(seg: str) -> bool:
@@ -226,8 +436,9 @@ def translate_paragraphs(
                 continue
             r = o.translate(seg.strip(), context={"source": "screenshot"})
             last = r
-            if getattr(r, "error", None):
-                errors.append(str(r["error"]) if isinstance(getattr(r, "error", None), str) else repr(r.error))
+            err = getattr(r, "error", None)
+            if err:
+                errors.append(str(err))
             parts.append(r.text.strip())
         return {
             "en": collapse_cjk_spaces(text),
@@ -244,9 +455,11 @@ def translate_paragraphs(
         return list(ex.map(_one, paragraphs))
 
 
-def process_image(image_path: str, orch: Any) -> list[dict[str, Any]]:
+def process_image(image_path: str, orch: Any, *, zh_bigrams: set[str] | None = None) -> list[dict[str, Any]]:
     """OCR → 段落 → 翻译, 全流程。"""
-    return translate_paragraphs(assemble_paragraphs(ocr_image(image_path)), orch)
+    return translate_paragraphs(
+        assemble_paragraphs(ocr_image(image_path, zh_bigrams=zh_bigrams)), orch
+    )
 
 
 def render_markdown(

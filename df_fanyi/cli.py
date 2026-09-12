@@ -229,8 +229,7 @@ def _cmd_shot(args: argparse.Namespace) -> int:
             print("未识别到英文文本", file=sys.stderr)
         return 1
 
-    orch = build_orchestrator(cfg)
-    results = translate_paragraphs(paragraphs, orch)
+    results = translate_paragraphs(paragraphs, lambda: build_orchestrator(cfg))
     if args.save_md:
         from datetime import datetime
 

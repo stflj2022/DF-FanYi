@@ -11,7 +11,13 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from df_fanyi.cli import build_parser
-from df_fanyi.shot import OcrWord, assemble_paragraphs, parse_tsv, render_markdown
+from df_fanyi.shot import (
+    OcrWord,
+    assemble_paragraphs,
+    parse_tsv,
+    render_markdown,
+    translate_paragraphs,
+)
 
 
 def _tsv(level, page, block, par, line, word, left, top, w, h, conf, text):
@@ -111,6 +117,50 @@ class TestAssembleParagraphs:
         pars = assemble_paragraphs(words, max_par=12)
         assert len(pars) == 12
         assert len(set(pars)) == 12
+
+
+class TestTranslateParallel:
+    """translate_paragraphs: 实例与工厂函数两种入参, 保序。"""
+
+    class _Result:
+        def __init__(self, text):
+            self.text = text
+            self.model = "m"
+            self.provider = "p"
+            self.confidence = 0.5
+            self.error = None
+
+    class _FakeOrch:
+        def __init__(self):
+            self.calls = []
+
+        def translate(self, text, context=None):
+            self.calls.append(text)
+            return TestTranslateParallel._Result(f"[{text}]")
+
+    def test_shared_instance(self):
+        orch = self._FakeOrch()
+        out = translate_paragraphs(["aaa text", "bbb text"], orch)
+        assert [r["zh"] for r in out] == ["[aaa text]", "[bbb text]"]
+        assert [r["en"] for r in out] == ["aaa text", "bbb text"]
+
+    def test_factory_per_thread_and_order(self):
+        made = []
+
+        def factory():
+            o = TestTranslateParallel._FakeOrch()
+            made.append(o)
+            return o
+
+        pars = [f"paragraph number {i} text" for i in range(8)]
+        out = translate_paragraphs(pars, factory, workers=4)
+        assert [r["en"] for r in out] == pars
+        assert all(r["zh"] == f"[{p}]" for r, p in zip(out, pars))
+        # 至少建了 1 个(线程池可能复用同一线程, 只验不炸+正确)
+        assert made
+
+    def test_empty(self):
+        assert translate_paragraphs([], self._FakeOrch()) == []
 
 
 class TestCliParser:

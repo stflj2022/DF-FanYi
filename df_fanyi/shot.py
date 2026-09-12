@@ -129,23 +129,39 @@ def ocr_image(image_path: str, *, timeout: int = 30) -> list[OcrWord]:
 
 
 def translate_paragraphs(
-    paragraphs: list[str], orch: Any
+    paragraphs: list[str], orch: Any, *, workers: int = 4
 ) -> list[dict[str, Any]]:
-    """逐段过翻译管线(缓存→词典→规则→LLM→验证)。"""
-    results: list[dict[str, Any]] = []
-    for text in paragraphs:
-        r = orch.translate(text, context={"source": "screenshot"})
-        results.append(
-            {
-                "en": text,
-                "zh": r.text,
-                "model": getattr(r, "model", ""),
-                "provider": getattr(r, "provider", ""),
-                "confidence": getattr(r, "confidence", 0.0),
-                "error": getattr(r, "error", None),
-            }
-        )
-    return results
+    """逐段过翻译管线(缓存→词典→规则→LLM→验证), 线程池并行。
+
+    交互式截图可能有 10+ 段新句子, 串行 LLM 往返要数分钟;
+    并行(默认 4 线程)把墙钟时间压到 1/4。
+    orch 可传实例(单/测试)或工厂函数(每线程独立实例 ——
+    sqlite 连接默认不可跨线程, 必须每线程一份 orchestrator)。
+    结果顺序与 paragraphs 一致(ThreadPoolExecutor.map 保序)。
+    """
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    factory = orch if callable(orch) else (lambda: orch)
+    local = threading.local()
+
+    def _one(text: str) -> dict[str, Any]:
+        if getattr(local, "orch", None) is None:
+            local.orch = factory()
+        r = local.orch.translate(text, context={"source": "screenshot"})
+        return {
+            "en": text,
+            "zh": r.text,
+            "model": getattr(r, "model", ""),
+            "provider": getattr(r, "provider", ""),
+            "confidence": getattr(r, "confidence", 0.0),
+            "error": getattr(r, "error", None),
+        }
+
+    if not paragraphs:
+        return []
+    with ThreadPoolExecutor(max_workers=min(workers, len(paragraphs))) as ex:
+        return list(ex.map(_one, paragraphs))
 
 
 def process_image(image_path: str, orch: Any) -> list[dict[str, Any]]:

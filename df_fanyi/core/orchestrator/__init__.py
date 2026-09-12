@@ -68,6 +68,42 @@ class TranslationResult:
     error: str | None = None
 
 
+# 2026-09-12 全中文化质量门: 检测译文中残留的英文功能词
+# 常见功能词清单(都是英文中除专有名词外必译的小词)
+_ENGLISH_FUNCTION_WORDS = frozenset({
+    'a', 'an', 'the', 'and', 'or', 'but', 'nor', 'yet', 'so',
+    'is', 'are', 'was', 'were', 'be', 'been', 'being',
+    'have', 'has', 'had', 'do', 'does', 'did',
+    'will', 'would', 'shall', 'should', 'can', 'could', 'may', 'might', 'must',
+    'of', 'in', 'on', 'at', 'to', 'for', 'with', 'by', 'from', 'as', 'into',
+    'through', 'during', 'before', 'after', 'above', 'below', 'between',
+    'that', 'which', 'who', 'whom', 'whose', 'what', 'where', 'when', 'why', 'how',
+    'this', 'these', 'those', 'there', 'here',
+    'i', 'you', 'he', 'she', 'it', 'we', 'they',
+    'my', 'your', 'his', 'her', 'its', 'our', 'their',
+    'me', 'him', 'them', 'us',
+    'if', 'then', 'because', 'since', 'while', 'although', 'though',
+    'very', 'much', 'many', 'more', 'most', 'some', 'any', 'all', 'no', 'not',
+    'just', 'only', 'also', 'too', 'even',
+})
+# 阈值: 译文里残留这么多英文功能词 → 判定为“中英混杂”, 回退原文
+_MAX_ENGLISH_RESIDUE = 2
+
+
+def _count_english_function_words(text: str) -> int:
+    """统计译文中保留的英文功能词个数。跳过专有名词检测。
+
+    实现: 按空格/标点分词, 检查词是否在 _ENGLISH_FUNCTION_WORDS 里。
+    变量占位符 {COUNT} 会被分词器看作 {COUNT}, 不计入。
+    """
+    import re as _re
+    # 去掉变量占位符 (避免误判 {ITEM} 等为英文)
+    cleaned = _re.sub(r'\{[^}]*\}', ' ', text)
+    # 提取所有英文单词 (a-zA-Z)
+    words = _re.findall(r'[A-Za-z]+', cleaned.lower())
+    return sum(1 for w in words if w in _ENGLISH_FUNCTION_WORDS)
+
+
 class Orchestrator:
     """翻译管线编排器(§11): 单句 translate, LLM 可注入, 永不抛异常。"""
 
@@ -158,6 +194,25 @@ class Orchestrator:
                 provider=self._provider,
                 latency_ms=_ms_since(start),
                 error=f"验证失败: {'; '.join(validation.errors)}",
+            )
+
+        # 2026-09-12 硬性:全中文化质量门 (用户指令 "都翻译, 不要出现外文")
+        # 检测输出中残留的英文功能词(are/is/the/a/of/in/and/with 等),
+        # 超阈值(默认 2 个) → 判定翻译失败, 回退原文 + 标记 quality_english_leak
+        english_residue = _count_english_function_words(translated)
+        if english_residue > _MAX_ENGLISH_RESIDUE:
+            logger.warning(
+                "译文残留 %d 个英文功能词 (门限 %d), 回退原文: %s",
+                english_residue, _MAX_ENGLISH_RESIDUE,
+                translated[:80],
+            )
+            return TranslationResult(
+                normalized,
+                normalized,
+                model=self._model_name,
+                provider=self._provider,
+                latency_ms=_ms_since(start),
+                error=f"quality_english_leak: {english_residue} function words",
             )
 
         # 还原占位符(§22/§23: 验证通过才还原, 还原永不丢信息)

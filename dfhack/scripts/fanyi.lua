@@ -756,10 +756,32 @@ end
 
 -- 中文行贴图(ticket-013/014 共用): rows 自 rect 顶部依次绘制, 缺字形跳格;
 -- 返回绘制格数(scale=2 时每字 4 格)。dc 由调用方注入(真实 painter/无头 mock 均可)。
+--
+-- 2026-09-12 修复: 贴 CJK 前先涂背景, 覆盖原文英文。
+-- 旧实现 dc:tile(' ', tp) 仅贴字形, 但字形透明像素让英文背景透出, 视觉上
+-- "中英叠印" 误认为是字幕条回来了。这里两步: 先 dc:fill() 涂黑/灰底,
+-- 再贴 CJK tile。bg/fg 与 textviewer/announcement 面板底色一致(灰底白字)。
 local function paint_cjk_rows(dc, rows, rect)
     local scale = S.tv_font.scale or 1
     local resolve = S.tv_font.tex and S.tv_font.tex.getTexposByHandle or nil
     if not resolve then return 0 end
+    -- 1) 涂底: 用不透明背景色覆盖矩形(消灭英文透出)
+    --    使用黑底(COLOR_BLACK=0, COLOR_WHITE=7) 保证覆盖;
+    --    面板原底色不管, 黑底足够覆盖且与 textviewer/announcement 面板
+    --    默认深色背景相近, 视觉差异最小。
+    --    退路: 如果 dc.pen 设置报镗, 直接 dc:string(' ') 也可.
+    pcall(function() dc:pen(7, 0) end)  -- fg=white bg=black
+    local bg_rows = math.floor(rect.h / scale)
+    local bg_cols = math.floor(rect.w / scale)
+    for ri = 1, bg_rows do
+        local y = rect.y + (ri - 1) * scale
+        for ci = 0, bg_cols - 1 do
+            local x = rect.x + ci * scale
+            -- tile(' ', 0) = 空格字符, 无字形 = 仅涂黑底
+            pcall(function() dc:seek(x, y):tile(' ', 0) end)
+        end
+    end
+    -- 2) 贴 CJK 字形 (原有逻辑)
     local function tile_at(h, x, y)
         if not h then return false end
         if scale == 2 and type(h) == 'table' then

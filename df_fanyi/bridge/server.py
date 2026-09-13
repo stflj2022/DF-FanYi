@@ -104,6 +104,8 @@ class BridgeServer:
         results_capacity: int = 1024,
         results_ttl_s: float = 300.0,
         paragraph_cache: ParagraphCache | None = None,
+        max_conns: int = 4,
+        send_timeout_s: float = 5.0,
     ) -> None:
         if transport not in ("tcp", "unix"):
             raise ValueError(f"transport 非法: {transport!r}(支持 tcp/unix)")
@@ -133,6 +135,15 @@ class BridgeServer:
         self._listen_thread: threading.Thread | None = None
         self._conn_threads: list[threading.Thread] = []
         self._conns: set[socket.socket] = set()
+        # 流控(2026-09-13 卡顿复盘): DF 端 socket 泄漏时 120s 读超时来不及清理,
+        # 堆到 97 连接 × 每条 ~2.6MB 内核 sndbuf ≈ 250MB。补连接层防护:
+        #   max_conns     — 并发连接上限, 超限踢最旧(DF 正常 1 条, 心跳 48s < 120s
+        #                   读超时不会误杀; 4 留调试余量)
+        #   send_timeout_s — sendall 专用短超时, 对端不读时 5s 内断开,
+        #                   避免内核发送缓冲灌满(~2.6MB/socket)干等 120s
+        self._max_conns = max(1, int(max_conns))
+        self._send_timeout_s = float(send_timeout_s)
+        self._conn_order: list[socket.socket] = []  # accept 顺序(踢最旧用)
         self.bound_port: int | None = None
         # §25 完成/失败事件 → 结果缓冲(worker 线程执行, 本类只入队, 快)
         scheduler.subscribe_done(self._on_done)
@@ -239,7 +250,25 @@ class BridgeServer:
                 break
             conn.settimeout(120.0)
             with self._lock:
+                # 流控: 超限踢最旧连接(泄漏 socket 由 120s 超时慢慢清的旧路径太慢)
+                evicted = None
+                while len(self._conn_order) >= self._max_conns:
+                    evicted = self._conn_order.pop(0)
+                    self._conns.discard(evicted)
                 self._conns.add(conn)
+                self._conn_order.append(conn)
+            if evicted is not None:
+                logger.warning(
+                    "连接超限(max_conns=%d), 踢除最旧连接: %s", self._max_conns, evicted
+                )
+                try:
+                    evicted.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                try:
+                    evicted.close()
+                except OSError:
+                    pass
             thread = threading.Thread(
                 target=self._serve_conn, args=(conn,), daemon=True, name="df-fanyi-bridge-conn"
             )
@@ -266,6 +295,8 @@ class BridgeServer:
             conn.close()
             with self._lock:
                 self._conns.discard(conn)
+                if conn in self._conn_order:
+                    self._conn_order.remove(conn)
 
     def _handle_line(self, conn: socket.socket, line: str) -> None:
         obj, perr = decode_line(line)
@@ -279,19 +310,36 @@ class BridgeServer:
         try:
             result = self._dispatch(str(obj["method"]), obj.get("params") or {})
         except RPCError as exc:
-            self._send(conn, make_error(exc.code, exc.message, rid=rid, data=exc.data))
+            if not self._send(conn, make_error(exc.code, exc.message, rid=rid, data=exc.data)):
+                raise OSError("send failed") from None
             return
         except Exception as exc:  # noqa: BLE001 — 单请求故障不影响连接/进程(§2.3)
             logger.exception("请求处理异常: %s", exc)
-            self._send(conn, make_error(-32000, f"internal error: {exc}", rid=rid))
+            if not self._send(conn, make_error(-32000, f"internal error: {exc}", rid=rid)):
+                raise OSError("send failed") from None
             return
-        self._send(conn, make_result(rid, result))
+        if not self._send(conn, make_result(rid, result)):
+            # 发送失败(对端卡死/缓冲满): 抛出走 finally 关闭连接,
+            # 给对端发 FIN/RST 促其自愈重连(2026-09-13 死锁实锤)
+            raise OSError("send failed")
 
-    def _send(self, conn: socket.socket, obj: dict[str, Any]) -> None:
+    def _send(self, conn: socket.socket, obj: dict[str, Any]) -> bool:
+        """发送一行 JSON-RPC。失败返回 False(调用方应断开该连接)。
+
+        流控(2026-09-13 卡顿复盘): 对端不读时 sendall 会把内核 sndbuf 灌满
+        (~2.6MB/socket)后死等; 发送专用短超时(5s)快速失败, 且失败必须
+        断连 —— Wine 侧 DF 的 socket 被 wineserver 持 dup fd, 客户端
+        close 关不干净, 只能靠桥端主动 close 发 FIN/RST 解开死锁。
+        """
         try:
-            conn.sendall(encode_line(obj).encode("utf-8"))
+            conn.settimeout(self._send_timeout_s)
+            try:
+                conn.sendall(encode_line(obj).encode("utf-8"))
+            finally:
+                conn.settimeout(120.0)
+            return True
         except OSError:
-            pass
+            return False
 
     # ---- 方法分发 ---------------------------------------------------------
 

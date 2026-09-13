@@ -51,9 +51,9 @@ S.config = S.config or {
     port = 17486,           -- 与引擎 config bridge.port 对齐
     df = '53.06',           -- 守卫: 锁定的 DF 版本(整合包 v53.06)
     dfhack = '53.06-r1',    -- 守卫: 锁定的 DFHack 版本前缀
-    tick_frames = 12,       -- 主轮询节拍(~0.2s@60fps)
+    tick_frames = 48,       -- 主轮询节拍(~0.8s@60fps; 12→48 减压 tick/drain/back-pressure, ticket-N+1)
     retry_frames = 90,      -- 重连起始间隔(帧), 指数退避 ×2 至 900
-    max_send_per_tick = 3,  -- 每节拍最多发送的待发事件数
+    max_send_per_tick = 1,  -- 每节拍最多发送的待发事件数(3→1 减压 send 队列, ticket-N+1)
     -- ticket-012: 字幕条已删除. FANYI_TTL_MS 环境变量名保留为公共约定,
     -- 供后续 ticket-013/014 inline overlay TTL 使用(13/14 可选读此 env var).
     -- 启动时仍解析此 env var(避免被外层覆盖脚本误以为已删除), 但不再用于字幕.
@@ -410,12 +410,27 @@ local function connect()
         S.engine_online = false
         return false
     end
+    -- ticket-N+1: 入口先关旧 client, 防 socket 泄漏 → TCP 连接堆积
+    -- 背景: 之前每个 tick 都可能 connect 一次(连不上/超时), 但 S.client = client
+    -- 直接覆盖老值, 老的 socket 永远不被 close → ss 显示 N 个 ESTABLISHED 连接累积
+    if S.client then
+        pcall(function() S.client:close() end)
+        S.client = nil
+    end
     local ok, client = pcall(sock.tcp.connect, sock.tcp, C.host, C.port)
     if not ok or not client then
         S.engine_online = false
         return false
     end
-    local _, serr = pcall(client.setNonblocking, client)
+    -- ticket-N+1: setNonblocking 失败时立即 close, 防止后续 receive('*l') 同步阻塞
+    -- 主循环卡死(症状: 输入延迟 = 主循环在阻塞 read 等数据)
+    local ok_nb, serr = pcall(client.setNonblocking, client)
+    if not ok_nb then
+        pcall(function() client:close() end)
+        S.last_error = 'setNonblocking failed: ' .. tostring(serr)
+        S.engine_online = false
+        return false
+    end
     S.client = client
     S.engine_online = true
     S.stats.reconnect = S.stats.reconnect + 1
@@ -435,8 +450,13 @@ local function disconnect(reason)
 end
 
 local function send_line(client, line)
-    -- 非阻塞 socket: 单次 send; 失败即视为断线(下个节拍重连)
-    return pcall(client.send, client, line .. '\n')
+    -- 非阻塞 socket: 单次 send。两个失败面都要接住(2026-09-13 死锁实锤):
+    --   1) pcall 抑 Lua 异常(断连时 socket.send 会抛)
+    --   2) 非阻塞缓冲满/断连时 send 返回 nil + err(不抛异常!)
+    -- 旧版直接 return pcall(...) → 第 2 种被当成“发送成功”, 永不重连,
+    -- DF 侧 sndbuf 灌满 2.6MB 后双向死锁(Recv/Send 双满, 见 ss 实测)。
+    local ok, n = pcall(client.send, client, line .. '\n')
+    return ok and type(n) == 'number'
 end
 
 -- 读回(非阻塞): receive('*l') 无数据时返回 nil(EWOULDBLOCK 静默吞掉, 见 luasocket.cpp
@@ -1531,11 +1551,15 @@ function fanyi_command(args)
         ensure_capture()
         fanyi_install_state_hooks()
         arm_timer()
-        -- ticket-017: 注册 F11/F12 全局热键(选词/关闭浮窗)
+        -- ticket-N+1: F11/F12 keybinding + mouse_select overlay 已废弃
+        -- (2026-09-13 截图翻译流程代替选词浮窗)。注册代码保留但不执行, 避免手贱恢复
+        -- 时找不到原配置; 三行 pcall 全注释, 详见 omarchy-tools/fanyi-shot。
+        --[[
         pcall(function() dfhack.run_command('keybinding add F11@dwarfmode|dungeonmode|default|adventur|adventur_interact|textviewer "fanyi mouseselect"') end)
         pcall(function() dfhack.run_command('keybinding add F12@dwarfmode|dungeonmode|default|adventur|adventur_interact|textviewer "fanyi mousedismiss"') end)
         pcall(function() dfhack.run_command('overlay', 'enable', 'fanyi.mouse_select') end)
-        flog('fanyi start (捕获: 公告+游戏日志+文本弹窗; F11 选词/F12 关闭)')
+        ]]
+        flog('fanyi start (捕获: 公告+游戏日志+文本弹窗)')
         print('fanyi 捕获已启动(公告+游戏日志+文本弹窗); 引擎离线时静默显示原文')
     elseif cmd == 'stop' or cmd == 'disable' then
         if S.state ~= 'running' then print('未运行') return end
